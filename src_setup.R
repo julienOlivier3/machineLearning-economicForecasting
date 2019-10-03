@@ -41,6 +41,7 @@ packages <- c("xlsx",                                                      # rea
               "kernlab",                                                   # machine learning: support vector regression
               "mlr",                                                       # machine learning environment
               "Matrix",                                                    # coercing to sparse matrix (required as input data for some ML algorithms (e.g. xgboost))
+              "irace",                                                     # iterated F-race tuning
               "janitor",                                                   # upper case colnames
               "gridExtra",                                                 # allow several ggplots to appear in one window
               "viridis",                                                   # color palette

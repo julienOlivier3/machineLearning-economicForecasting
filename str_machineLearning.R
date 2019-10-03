@@ -240,7 +240,8 @@ performance_benchmark$results$gdp_forecast$randomForest$pred$data %>%
             RMSE = sqrt(mean(ERROR^2)))
 
 
-
+# Get hyperparameters from benchmark object
+performance_benchmark_sv$learners
 
 
 
@@ -264,6 +265,42 @@ temp2 %>%
   top_n(20, -mse.test.mean) %>% 
   arrange(mse.test.mean)
 
+
+## Visualizations =========================================================
+
+### SV ####################################################################
+plot_sv_heat1 <- generateHyperParsEffectData(tuning_results_sv.svm, 
+                            include.diagnostics = FALSE, 
+                            trafo = TRUE, 
+                            partial.dep = TRUE) %>% 
+  .$data %>% 
+  as_tibble()
+
+
+plot_sv_heat1 %>% 
+  filter(kernel == "sigmoid") %>% 
+  ggplot() +
+  scale_y_log10(breaks=10^seq(-5,4,length.out = 10),labels=10^seq(-5,4,length.out = 10)) +
+  scale_x_log10(breaks=10^seq(-9,0,length.out = 10),labels=10^seq(-9,0,length.out = 10)) +
+  geom_tile(aes(x = epsilon, y = cost, fill = mse.test.mean)) + 
+  scale_fill_gradient(low = "green", high = "red", trans = "log")
+
+plot_sv_heat2 <- generateHyperParsEffectData(finetuning_results_sv.svm, 
+                                             include.diagnostics = FALSE, 
+                                             trafo = TRUE, 
+                                             partial.dep = TRUE) %>% 
+  .$data %>% 
+  as_tibble()
+
+
+plot_sv_heat2 %>% 
+  filter(kernel == "sigmoid") %>% 
+  ggplot() +
+  scale_x_continuous(breaks=seq(0.2,0.3,length.out = 11), labels=seq(0.2,0.3,length.out = 11)) +
+  scale_y_continuous(breaks=seq(0.4,0.5,length.out = 11), labels=seq(0.4,0.5,length.out = 11)) +
+  geom_tile(aes(x = epsilon, y = cost, fill = mse.test.mean)) + 
+  scale_fill_gradient(low = "green", high = "red")
+  
 # -------------------------------------------------------------------------
 
 
@@ -279,3 +316,4 @@ temp2 %>%
 # - implement additional ml models
 # - start with FAVAR and implement it
 # - 
+

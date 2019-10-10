@@ -1,17 +1,37 @@
+# RANDOM FOREST
 # Steering ----------------------------------------------------------------
 setwd("J:\\Studium\\Master\\Masterthesis")
 
-# Random Forest
+# Tuning stage
 benchmarking_rf <- FALSE
-finetuning_rf <- FALSE
+finetuning_rf <- TRUE
 
-# Finetuning parameter threshholds
-ntree_low <- 10
-ntree_up <- 65
-mtry_low <- 105
-mtry_up <- 209
-nodesize_low <- 1
-nodesize_up <- 29
+# First-stage tuning setup
+npar_rf <- 3      # Number of tuning parameters
+
+# Finetuning setup
+# Final learner
+learner_rf <- makeLearner(cl = "regr.randomForest",                   
+                          id = "randomForest",                        
+                          predict.type = "se",                           # special prediction in regression tasks (mean response AND standard errors)
+                          #maxnodes = NULL,                               # maximum number of terminal nodes trees in the forest can have. This parameter is ignored. Steering of tree size via nodesize.
+                          replace = FALSE,                               # no replacement of observations in training set (not valid for time series). Note: Argument sampsize defines the size(s) of sample to draw, default is .632 times the sample size.
+                          #sampsize = 1,                                  # all observations in training data are used for training (i.e. no bootstrapping any more)
+                          #na.action = na.omit                            # omit observations with missings (but data is balanced anyway, imputation takes place beforehand)
+                          )                           
+
+# Name of tuning parameters
+ntree_rf <- "ntree" 
+mtry_rf <- "mtry"
+nodesize_rf <- "nodesize"
+
+# Search space boundaries
+ntree_low <- 250
+ntree_up <- 550
+mtry_low <- 130
+mtry_up <- 180
+nodesize_low <- 20
+nodesize_up <- 70
 
 #--------------------------------------------------------------------------
 
@@ -21,18 +41,38 @@ if(benchmarking_rf){
 
 learner_rf.rf <- makeLearner(cl = "regr.randomForest",                   
                              id = "randomForest",                        
-                             predict.type = "se")                          # special prediction in regression tasks (mean response AND standard errors)
+                             predict.type = "se",                           # special prediction in regression tasks (mean response AND standard errors)
+                             #maxnodes = NULL,                               # maximum number of terminal nodes trees in the forest can have. This parameter is ignored. Steering of tree size via nodesize.
+                             replace = FALSE,                               # no replacement of observations in training set (not valid for time series). Note: Argument sampsize defines the size(s) of sample to draw, default is .632 times the sample size.
+                             #sampsize = 1,                                  # all observations in training data are used for training (i.e. no bootstrapping any more)
+                             #na.action = na.omit                           # omit observations with missings (but data is balanced anyway, imputation takes place beforehand)
+                             )
 
 learner_rf.rfSRC <- makeLearner(cl = "regr.randomForestSRC",                   
                                 id = "randomForestSRC",                        
-                                predict.type = "response")                 # standard prediction in regression tasks (mean response)
+                                predict.type = "response",                  # standard prediction in regression tasks (mean response)
+                                #nodedepth = NULL,                           # maximum depth to which a tree should be grown. This parameter is ignored. Steering of tree size via nodesize.
+                                samptype = "swor",                          # no replacement of observations in training set (not valid for time series). Note: argument sampsize is the function specifying size of bootstrap data when by.root is in effect. For sampling without replacement, it is the requested size of the sample, which by default is .632 times the sample size.
+                                #sampsize = 1,                               # all observations in training data are used for training (i.e. no bootstrapping any more)
+                                bootstrap = "by.root",                      # bootstraps the data by sampling (with or) without replacement. Note: here one could even turn off bootstrapping by setting bootstrap = "none"). 
+                                na.action = "na.omit")                      # omit observations with missings (but data is balanced anyway, imputation takes place beforehand)
+                                
 
 learner_rf.ranger <- makeLearner(cl = "regr.ranger",                   
                                  id = "ranger",                        
-                                 predict.type = "se") 
+                                 predict.type = "se",
+                                 #max.depth = NULL,                          # maximal tree depth. This parameter is ignored. Steering of tree size via min.node.size.
+                                 replace = FALSE,                           # no replacement of observations in training set (not valid for time series). Note: Argument sample.fraction is the fraction of observations to sample. Default is 1 for sampling with replacement and 0.632 for sampling without replacement.
+                                 sample.fraction = 1)                       # all observations in training data are used for training (i.e. no bootstrapping any more)
 
-
-
+# Notes:
+# - for the result assessment later argument importance needs to adjusted accordingly
+# - for randomForestSRC implementation there is an argument called nsplit which defines 
+#   the number of random splits to consider for each candidate splitting variable (default = 10).
+#   Is there a similar argument for the other implementations?
+#   Apparently no equivalent for randomForest. However, ranger has arguments splitrule and and num.random.splits.
+#   Splitrule defaults to NULL. So no special rule specification for each candidate splitting variable.
+# - for ranger there is no handling of missings values implemented.
 
 ## Tuning =================================================================
 # Inner loop of nested resampling
@@ -67,7 +107,7 @@ getParamSet("regr.ranger")
 tuning_ps_rf.rf <- makeParamSet(
   makeNumericParam("ntree",                                                # define tuning parameter
                    lower = 10,                                             # lower value of continuous parameter space
-                   upper = 500,                                            # upper value of parameter space
+                   upper = 1000,                                           # upper value of parameter space
                    trafo = function(x) ceiling(x)),                        # function applied to parameter values (here ceiling to assure that parameters are integers)
   makeNumericParam("mtry", 
                    lower = floor(ncol(data_training)*0.1),                 # fraction of possible feature is rounded down
@@ -84,7 +124,7 @@ tuning_ps_rf.rfSRC <- tuning_ps_rf.rf
 tuning_ps_rf.ranger <- makeParamSet(
   makeNumericParam("num.trees",                                            # define tuning parameter
                    lower = 10,                                             # lower value of continuous parameter space
-                   upper = 500,                                            # upper value of parameter space
+                   upper = 1000,                                           # upper value of parameter space
                    trafo = function(x) ceiling(x)),                        # function applied to parameter values (here ceiling to assure that parameters are integers)
   makeNumericParam("mtry", 
                    lower = floor(ncol(data_training)*0.1), 
@@ -98,8 +138,14 @@ tuning_ps_rf.ranger <- makeParamSet(
 
 
 ### Define optimization algorithm #########################################
-# Grid search is applied in this thesis
-tuning_control <- makeTuneControlGrid(resolution = tuning_resolution)      # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
+# Random search in first tuning stage is applied in this thesis
+tuning_control <- makeTuneControlRandom(maxit = tuning_factor*npar_rf)     # random search
+
+# Alternatively iterated F-racing could be applied as grid search turns out to be rather ineffective (spends too much time searching in areas of poor performance)
+#tuning_control <- makeTuneControlIrace(maxExperiments = 200)              # promising tuning method (but not working on data in this thesis)
+
+# Alternatively grid search
+#tuning_control <- makeTuneControlGrid(resolution = tuning_resolution)     # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
 
 
 
@@ -197,12 +243,10 @@ if(finetuning_rf){
 # Finetuning --------------------------------------------------------------
 ## Learner ================================================================
 
-learner_rf.ranger <- makeLearner(cl = "regr.ranger",                   
-                                   id = "ranger",                        
-                                   predict.type = "se") 
+# see Steering  
   
-  
-  
+
+ 
   
 ## Tuning =================================================================
 # Inner loop of nested resampling
@@ -213,16 +257,16 @@ learner_rf.ranger <- makeLearner(cl = "regr.ranger",
   
 ### Create hyperparameter set #############################################
 
-tuning_ps_rf.ranger <- makeParamSet(
-  makeNumericParam("num.trees",                                           
+tuning_ps_rf <- makeParamSet(
+  makeNumericParam(ntree_rf,                                           
                      lower = ntree_low,                                            
                      upper = ntree_up,                                        
                      trafo = function(x) ceiling(x)),                      
-  makeNumericParam("mtry", 
+  makeNumericParam(mtry_rf, 
                      lower = mtry_low, 
                      upper = mtry_up, 
                      trafo = function(x) ceiling(x)),
-  makeNumericParam("min.node.size", 
+  makeNumericParam(nodesize_rf, 
                      lower = nodesize_low,                                              
                      upper = nodesize_up,                  
                      trafo = function(x) ceiling(x))
@@ -239,12 +283,12 @@ parallelMap::parallelStartSocket(cpus = 4,
                                  show.info = TRUE)
 
 set.seed(333)
-finetuning_results_rf.ranger <- tuneParams(learner = learner_rf.ranger,
-                                           task = task_training,
-                                           resampling = cv_tuning,
-                                           par.set = tuning_ps_rf.ranger, 
-                                           control = tuning_control, 
-                                           show.info = TRUE)
+finetuning_results_rf <- tuneParams(learner = learner_rf,
+                                    task = task_training,
+                                    resampling = cv_tuning,
+                                    par.set = tuning_ps_rf, 
+                                    control = tuning_control, 
+                                    show.info = TRUE)
 
 ## Performance estimation =================================================
 # Outer loop of nested resampling
@@ -254,23 +298,22 @@ finetuning_results_rf.ranger <- tuneParams(learner = learner_rf.ranger,
 
 ### Redefine learner given optimal parameters #############################
 
-
-learner_tuned_rf.ranger <- setHyperPars(learner = learner_rf.ranger,
-                                        num.trees = finetuning_results_rf.ranger$x$num.trees, 
-                                        mtry = finetuning_results_rf.ranger$x$mtry,
-                                        min.node.size = finetuning_results_rf.ranger$x$min.node.size)
+learner_tuned_rf <- setHyperPars(learner = learner_rf,
+                                 ntree = finetuning_results_rf$x[[1]],
+                                 mtry = finetuning_results_rf$x[[2]],
+                                 nodesize = finetuning_results_rf$x[[3]])
 
 
 ### Performance results ###################################################
 
 
 set.seed(333)
-performance_results_rf.ranger <- resample(learner = learner_tuned_rf.ranger,
-                                          task = task_overall,
-                                          resampling = cv_test,
-                                          measures = rmse,
-                                          keep.pred = TRUE,
-                                          show.info = TRUE)
+performance_results_rf <- resample(learner = learner_tuned_rf,
+                                   task = task_overall,
+                                   resampling = cv_test,
+                                   measures = rmse,
+                                   keep.pred = TRUE,
+                                   show.info = TRUE)
 
 parallelMap::parallelStop()
 
@@ -278,19 +321,6 @@ parallelMap::parallelStop()
 
 
 
-
-# 
-# performance_results$pred %>% 
-#   as_tibble() %>% 
-#   filter(set == "test") %>% 
-#   mutate(ERROR = truth - response) %>%
-#   summarise(ME = mean(ERROR),
-#             MSE = mean(ERROR^2),
-#             RMSE = sqrt(mean(ERROR^2)))
-
-
-
-  
 }
 
 

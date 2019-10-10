@@ -1,16 +1,32 @@
+# SUPPORT VECTOR REGRESSION
 # Steering ----------------------------------------------------------------
 setwd("J:\\Studium\\Master\\Masterthesis")
 
-# Support Vector Regression
+# Tuning stage
 benchmarking_sv <- FALSE
 finetuning_sv <- TRUE
 
+# Tuning setup
+npar_sv <- 2      # Number of tuning parameters
+
 # Finetuning parameter threshholds
 kern <- "sigmoid"
-cost_low <- 0.4
-cost_up <- 0.5
-epsilon_low <- 0.2
-epsilon_up <- 0.3
+# good results
+# cost_low <- 0.4
+# cost_up <- 0.5
+# epsilon_low <- 0.2
+# epsilon_up <- 0.3
+# good results
+cost_low <- 0.1
+cost_up <- 0.15
+epsilon_low <- 0.25
+epsilon_up <- 0.35
+# result 0.6135
+cost_low <- 0.01
+cost_up <- 0.05
+epsilon_low <- 0
+epsilon_up <- 0.05
+
 
 #--------------------------------------------------------------------------
 if(benchmarking_sv){
@@ -146,10 +162,14 @@ tuning_ps_sv.ksvm <- makeParamSet(
 
 
 ### Define optimization algorithm #########################################
-# Grid search is applied in this thesis
-tuning_control <- makeTuneControlGrid(resolution = tuning_resolution)    # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
+# Random search in first tuning stage is applied in this thesis
+tuning_control <- makeTuneControlRandom(maxit = tuning_factor*npar_sv)     # random search
+
 # Alternatively iterated F-racing could be applied as grid search turns out to be rather ineffective (spends too much time searching in areas of poor performance)
-#tuning_control <- makeTuneControlIrace(maxExperiments = 200)            # promising tuning method but not fully understood
+#tuning_control <- makeTuneControlIrace(maxExperiments = 200)              # promising tuning method (but not working on data in this thesis)
+
+# Alternatively grid search
+#tuning_control <- makeTuneControlGrid(resolution = tuning_resolution)     # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
 
 
 ### Tuning results ########################################################
@@ -187,9 +207,12 @@ learner_tuned_sv.svm <- setHyperPars(learner = learner_sv.svm,
 learner_tuned_sv.ksvm <- setHyperPars(learner = learner_sv.ksvm,
                                       kernel = tuning_results_sv.ksvm$x$kernel,
                                       C = tuning_results_sv.ksvm$x$C,
-                                      epsilon = tuning_results_sv.ksvm$x$epsilon,
-                                      scale = tuning_results_sv.ksvm$x$scale,
-                                      offset = tuning_results_sv.ksvm$x$offset)
+                                      epsilon = tuning_results_sv.ksvm$x$epsilon#,
+                                      #degree = 3,
+                                      #sigma = 1/ncol(data_training),
+                                      #scale = 1/ncol(data_training),
+                                      #offset = 0
+                                      )
 
 
 
@@ -241,8 +264,7 @@ learner_sv.svm <- makeLearner(cl = "regr.svm",
 
 tuning_ps_sv.svm <- makeParamSet(
   makeDiscreteLearnerParam("kernel", 
-                           values = kern,                                 # define best kernel to use in SVR
-                           default = "sigmoid"),
+                           values = kern),                                # define best kernel to use in SVR
   # makeNumericParam("degree",                                            # define tuning parameter for the polynomial degree for polynomial kernel
   #                  lower = 1,                                           # lower value is 1 which equals a linear kernel
   #                  upper = 10,                                          # upper value 10 is reasonable
@@ -262,8 +284,7 @@ tuning_ps_sv.svm <- makeParamSet(
 )
 ### Define optimization algorithm #########################################
 # Grid search is applied in this thesis
-tuning_control <- makeTuneControlGrid(resolution = 11)      # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
-
+tuning_control <- makeTuneControlGrid(resolution = tuning_resolution)      # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
 
 
 ### Tuning results ########################################################

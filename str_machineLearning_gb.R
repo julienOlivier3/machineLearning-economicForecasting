@@ -1,9 +1,13 @@
+# GRADIENT BOOSTING
 # Steering ----------------------------------------------------------------
 setwd("J:\\Studium\\Master\\Masterthesis")
 
-# Gradient Boosting
+# Tuning stage
 benchmarking_gb <- FALSE
 finetuning_gb <- FALSE
+
+# Tuning setup
+npar_gb <- 2      # Number of tuning parameters
 
 # Finetuning parameter threshholds
 ntree_low <- 300
@@ -95,8 +99,14 @@ tuning_ps_gb.xgb <- makeParamSet(
 
 
 ### Define optimization algorithm #########################################
-# Grid search is applied in this thesis
-tuning_control <- makeTuneControlGrid(resolution = tuning_resolution)      # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
+# Random search in first tuning stage is applied in this thesis
+tuning_control <- makeTuneControlRandom(maxit = tuning_factor*npar_gb)     # random search
+
+# Alternatively iterated F-racing could be applied as grid search turns out to be rather ineffective (spends too much time searching in areas of poor performance)
+#tuning_control <- makeTuneControlIrace(maxExperiments = 200)              # promising tuning method (but not working on data in this thesis)
+
+# Alternatively grid search
+#tuning_control <- makeTuneControlGrid(resolution = tuning_resolution)     # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
 
 
 

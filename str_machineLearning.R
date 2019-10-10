@@ -3,23 +3,22 @@ setwd("J:\\Studium\\Master\\Masterthesis")
 
 # GENERAL
 #training_start <- "1987 Q2"       # Set the first quarter of training data
-training_end <- "2007 Q1"         # Set the last quarter of training data, the subsequent quarter is the first quarter to be forecasted
-forecasting_periods <- 1          # Set number of forecasting periods
+training_end <- "2007 Q1"         # Set the last quarter of training data, the subsequent quarter is the first quarter to be forecasted (Note: Go to "2007 Q1" once the latest observation is "2019 Q2")
+forecasting_periods <- 1          # Set number of forecasting periods (n-ahead forecast, need to coincide with max_lag)
 max_lag <- 1                      # Set the highest lag order considered in the feature space
 
 
 # mlr-SPECIFIC
 # Cross Validation
 growing <- TRUE                   # If TRUE, cross validation follows a growing window strategy, if FALSE a sliding window strategy
-horizon <- 1                      # Set the number of observations in the test set
-initial.window <- 0.8             # Set the fraction of observations of the overall trainig data in the first training subset
-skip <- 0.2                       # Set the fraction of training/validation sets which should be skipped
+horizon <- 1                      # Set the number of observations in the test set (default = 1, since we are doing one-step ahead forecasts)
+skip <- 0.2                       # Set the fraction of training/validation sets which should be skipped (choose one of: 0.1, 0.2 & 0.5; the higher the less CVs)
 
-# improve the above parameters to have some sort of cyclicality (e.g. skip captures a complete average business cycle)
+# Note: possibly better to choose 0.1 as then after each 5 month (50*0.1 = 5 (see initial.window below)) forecast in the validation phase is made. This is quite acyclical ensuring that periods of expansion and periods of contraction are considered during validation
 
-# Tuning
-tuning_resolution <- 10           # Set the number of equally spaced parameter values picked form the grid of each parameter
-
+# TUNING
+tuning_resolution <- 11           # Set the number of equally spaced parameter values picked form the grid of each parameter in grid search (finetuning)
+tuning_factor <-  100             # Determine the number of iterations in random search (tuning_factor*npar (first-stage tuning))
 
 # SPECIAL
 forecasting_intervals <- 95       # Set forecasting confidence intervals
@@ -140,6 +139,8 @@ task_training <- makeRegrTask(id = "gdp_forecast_training",                # id 
 
 
 ## Resampling (Growing Window CV) =========================================
+initial.window <- ncol(data_training) - 50                                 # Set the number of observations of the overall trainig data in the first training subset. 
+
 cv_tuning <- makeResampleDesc(method = ifelse(growing,                     # steering section allows to choose between.. 
                                               "GrowingWindowCV",           # ..growing window (= training data gets sequentially bigger)..
                                               "FixedWindowCV"              # ..and fixed window (= size of training data remains same while still rolling forward)
@@ -163,7 +164,7 @@ cv_test <- makeResampleDesc(method = ifelse(growing,
 ## Models =================================================================
 
 ### Random Forest #########################################################
-#source(file = file.path(getwd(), "Code", "str_machineLearning_rf.R"))
+source(file = file.path(getwd(), "Code", "str_machineLearning_rf.R"))
 
 
 ### Gradient Boosting #####################################################
@@ -171,149 +172,29 @@ cv_test <- makeResampleDesc(method = ifelse(growing,
 
 
 ### Support Vector Regression #############################################
-source(file = file.path(getwd(), "Code", "str_machineLearning_sv.R"))
+#source(file = file.path(getwd(), "Code", "str_machineLearning_sv.R"))
 
 
 # -------------------------------------------------------------------------
 
-# Model asssessment -------------------------------------------------------
 
-## Loading results ========================================================
-
-#load(file.path(getwd(), "Results", "Random_Forest", "performance_benchmark.RData"))
-
-
-## Benchmarking analysis ==================================================
-
-# Best performer from set of same machine learning class
-performance_benchmark
-
-# Hyperparameters of best learner
-tuning_results_gb.gbm
-temp <- generateHyperParsEffectData(tuning_results_gb.gbm, 
-                            include.diagnostics = FALSE, 
-                            trafo = TRUE, 
-                            partial.dep = TRUE) %>% 
-  .$data %>% 
-  as_tibble()
-
-# Top 10 parameter constellations
-temp %>% 
-  top_n(nrow(.)*0.1, -mse.test.mean) %>% 
-  arrange(mse.test.mean)
-
-# Visualizations
-temp %>% 
-  group_by(num.trees) %>% 
-  summarise(MEDIAN_trees = median(mse.test.mean),
-            MEAN_trees = mean(mse.test.mean)) %>% 
-  ungroup() %>% 
-  ggplot() +
-  geom_line(aes(x = num.trees, y = MEDIAN_trees)) +
-  geom_line(aes(x = num.trees, y = MEAN_trees), color = "red")
-
-# Check indices
-tuning_results_rf.ranger$resampling$train.inds
-tuning_results_rf.ranger$resampling$test.inds
-
-# Check test results
-performance_benchmark$results$gdp_forecast$ranger$pred$data %>% 
-  as_tibble() 
-
-# Summarise results in fashion of econometric models
-performance_benchmark$results$gdp_forecast$randomForest$pred$data %>% 
-  as_tibble() %>% 
-  filter(set == "test") %>% 
-  mutate(MODEL_ID = "RF.rf") %>% 
-  bind_rows(performance_benchmark$results$gdp_forecast$randomForestSRC$pred$data %>% 
-              as_tibble() %>% 
-              filter(set == "test") %>% 
-              mutate(MODEL_ID = "RF.rfSRC")) %>% 
-  bind_rows(performance_benchmark$results$gdp_forecast$ranger$pred$data %>% 
-              as_tibble() %>% 
-              filter(set == "test") %>% 
-              mutate(MODEL_ID = "RF.ranger")) %>% 
-  mutate(ERROR = truth - response) %>%
-  group_by(MODEL_ID) %>% 
-  summarise(ME = mean(ERROR),
-            MSE = mean(ERROR^2),
-            RMSE = sqrt(mean(ERROR^2)))
-
-
-# Get hyperparameters from benchmark object
-performance_benchmark_sv$learners
-
-
-
-
-
-
-
-
-## Finetuning analysis ====================================================
-performance_results_rf.ranger
-
-finetuning_results_rf.ranger
-temp2 <- generateHyperParsEffectData(finetuning_results_rf.ranger, 
-                                             include.diagnostics = FALSE, 
-                                             trafo = TRUE, 
-                                             partial.dep = TRUE) %>% 
-  .$data %>% 
-  as_tibble()
-
-temp2 %>%   
-  top_n(20, -mse.test.mean) %>% 
-  arrange(mse.test.mean)
-
-
-## Visualizations =========================================================
-
-### SV ####################################################################
-plot_sv_heat1 <- generateHyperParsEffectData(tuning_results_sv.svm, 
-                            include.diagnostics = FALSE, 
-                            trafo = TRUE, 
-                            partial.dep = TRUE) %>% 
-  .$data %>% 
-  as_tibble()
-
-
-plot_sv_heat1 %>% 
-  filter(kernel == "sigmoid") %>% 
-  ggplot() +
-  scale_y_log10(breaks=10^seq(-5,4,length.out = 10),labels=10^seq(-5,4,length.out = 10)) +
-  scale_x_log10(breaks=10^seq(-9,0,length.out = 10),labels=10^seq(-9,0,length.out = 10)) +
-  geom_tile(aes(x = epsilon, y = cost, fill = mse.test.mean)) + 
-  scale_fill_gradient(low = "green", high = "red", trans = "log")
-
-plot_sv_heat2 <- generateHyperParsEffectData(finetuning_results_sv.svm, 
-                                             include.diagnostics = FALSE, 
-                                             trafo = TRUE, 
-                                             partial.dep = TRUE) %>% 
-  .$data %>% 
-  as_tibble()
-
-
-plot_sv_heat2 %>% 
-  filter(kernel == "sigmoid") %>% 
-  ggplot() +
-  scale_x_continuous(breaks=seq(0.2,0.3,length.out = 11), labels=seq(0.2,0.3,length.out = 11)) +
-  scale_y_continuous(breaks=seq(0.4,0.5,length.out = 11), labels=seq(0.4,0.5,length.out = 11)) +
-  geom_tile(aes(x = epsilon, y = cost, fill = mse.test.mean)) + 
-  scale_fill_gradient(low = "green", high = "red")
-  
-# -------------------------------------------------------------------------
 
 
 # - continue tuning with blocked cv: check
 # - check how Hyndman is doing resampling: check (one step growing window)
 # - depending on this, use caret or try to use mlr-forecasting some way: check (mlr has this option!!! both growing window and sliding window)
 # - worst case: proceed with wrong cv: check (not necessary)
-# - check for more efficient tuning techniques: check advanced tuning (stick with grid search)
-# - prepare machine learning pipeline for randomForest and gradient boosting
-# - store results (all results econometrics and ml) as an R file 
-# - consider fine tuning
-# - think about further ML algorithms (SVM, lasso (for time series!?), recurrent neural network???)
-# - implement additional ml models
+# - check for more efficient tuning techniques: check advanced tuning (combination of two tuning methods. tried grid search, random search and iterated F-racing)
+# - prepare machine learning pipeline for randomForest and gradient boosting (check)
+# - store results (all results econometrics and ml) as an R file (check)
+# - consider fine tuning (check)
+# - think about further ML algorithms (SVM, lasso (for time series!?), recurrent neural network???) (check: worked out SVR)
+# - implement additional ml models (maybe if time permits)
+# - improve coding in ml R-files 
+# - clean up steering parameters in ml, make sure no observations are left out in cv (IMPORTANT: in rf sampling is with replacement as for now. This is not valid for ts; also look at bootstrap parameter in SRC)
+#   # + done for rf
+# - write rf, tune rf
+# - reread gb, tune gb
 # - start with FAVAR and implement it
 # - 
 

@@ -48,7 +48,8 @@ packages <- c("xlsx",                                                      # rea
               "tidyverse",                                                 # open up the universe ...
               "tsibble",                                                   # ... and expand it to time series analyses
               "tidyimpute",                                                # ... and data imputation
-              "tidyquant"                                                  # ... and even more functions which can be applied in a tidy fashion
+              "tidyquant",                                                 # ... and even more functions which can be applied in a tidy fashion
+              "beepr"                                                      # sound indicating that code execution has finished
               )
 
 function_package(packages)

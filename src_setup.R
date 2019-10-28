@@ -49,7 +49,8 @@ packages <- c("xlsx",                                                      # rea
               "tsibble",                                                   # ... and expand it to time series analyses
               "tidyimpute",                                                # ... and data imputation
               "tidyquant",                                                 # ... and even more functions which can be applied in a tidy fashion
-              "beepr"                                                      # sound indicating that code execution has finished
+              "beepr",                                                     # sound indicating that code execution has finished
+              "ggthemes"                                                   # additional ggplot themes (e.g. economist theme)
               )
 
 function_package(packages)
@@ -72,11 +73,16 @@ function_gradient_blue <- colorRampPalette(c(bb_blue_light, bb_blue_dark))
 theme_thesis <- theme(
   panel.background = element_blank(),
   panel.grid.major.y = element_line(color = "grey90", size = 0.5),
-  panel.grid.major.x = element_blank(),
-  panel.border = element_rect(fill = NA, color = "grey20"),
-  axis.text.x = element_text(family = "Arial", angle = 45, hjust = 1),
+  panel.grid.minor.y = element_line(color = "grey90", size = 0.5),
+  panel.grid.major.x = element_line(color = "grey90", size = 0.5),
+  panel.grid.minor.x = element_line(color = "grey90", size = 0.5),
+  #panel.grid.major.x = element_blank(),
+  #panel.border = element_rect(fill = NA, color = "grey20"),
+  #axis.text.x = element_text(family = "Arial", angle = 45, hjust = 1),
+  axis.text.x = element_text(family = "Arial"),
   axis.text.y = element_text(family = "Arial"),
-  axis.title = element_text(family = "Arial"),
+  #axis.title.y = element_text(family = "Arial", margin = margin(t = 0, r = 20, b = 0, l = 0)), # not working?
+  #axis.title.x = element_text(family = "Arial", margin = margin(t = 0, r = 0, b = 20, l = 0)),
   plot.title = element_text(size = 15, hjust = 0, family = "Arial"),
   legend.key = element_blank())
 
@@ -103,13 +109,13 @@ function_stationary <- function(data, tcode, date_index = "DATE_QUARTER", ppt = 
     clean_names(case = "all_caps")
   
   # Check if variable names of data and tcode match
-  if(!all(names(tcode) %in% names(data))){
+  if(!all(names(tcode) %in% (data %>% select(-date_index) %>% names()))){
     warning("Names of data and tcode do not match. Only matching columns from data selected")
     
     # Select only matching columns
     names_match <- intersect(names(data), names(tcode))
     data <- data %>% 
-      select(names_match)
+      select(date_index, names_match)
   }
   
   # Create help variable for percentage point conversion
@@ -117,6 +123,7 @@ function_stationary <- function(data, tcode, date_index = "DATE_QUARTER", ppt = 
   else    ppt <- 1
   
   trans_data <- data %>%
+    select(-date_index) %>% 
     imap(function(x, name){
       if(tcode[,name] == 2){
         c(NA, diff(x, lag = 1, differences = 1))
@@ -139,7 +146,7 @@ function_stationary <- function(data, tcode, date_index = "DATE_QUARTER", ppt = 
       }
       
       else if(tcode[,name] == 7){
-        (x/diff(x, lag = 1, differences = 1)-1)*ppt
+        c(NA, diff(x/lag(x)-1, lag = 1, differences = 1)*ppt)
       }
       
       else {
@@ -162,7 +169,7 @@ function_stationary_tests <- function(df){
                          KPSS_PVALUE = sapply(df, function(v) kpss.test(ts(v[!is.na(v)]), null = "Level")$p.value)
   )
   df_multi$ADF <- df_multi$ADF_PVALUE < 0.05
-  df_multi$KPSS <- df_multi$KPSS_PVALUE > 0.05
+  df_multi$KPSS <- df_multi$KPSS_PVALUE > 0.05  # H_0: trend stationary; 
   row.names(df_multi) <- c()
   return(df_multi)
 }

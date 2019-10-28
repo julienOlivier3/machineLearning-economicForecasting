@@ -3,29 +3,35 @@
 setwd("J:\\Studium\\Master\\Masterthesis")
 
 # Tuning stage
-benchmarking_sv <- FALSE
-finetuning_sv <- TRUE
+benchmarking_sv <- TRUE
+finetuning_sv <- FALSE
 
-# Tuning setup
-npar_sv <- 2      # Number of tuning parameters
+# First-stage tuning setup
+npar_sv <- 3           # number of tuning parameters
+tuning_factor <- 100  # modifiable tuning factor for SVR as results highly sensitive to tuning
 
-# Finetuning parameter threshholds
+# Finetuning setup
+# Name of tuning parameters
+cost_sv <- "cost" 
+epsilon_sv <- "epsilon"
+
+# Final kernel & search space boundaries
 kern <- "sigmoid"
-# good results
-# cost_low <- 0.4
-# cost_up <- 0.5
-# epsilon_low <- 0.2
-# epsilon_up <- 0.3
-# good results
 cost_low <- 0.1
-cost_up <- 0.15
-epsilon_low <- 0.25
-epsilon_up <- 0.35
-# result 0.6135
-cost_low <- 0.01
-cost_up <- 0.05
-epsilon_low <- 0
-epsilon_up <- 0.05
+cost_up <- 0.5
+epsilon_low <- 0.1
+epsilon_up <- 0.7
+gamma_fix <- 0.027
+
+# Final learner
+learner_sv <- makeLearner(cl = "regr.svm", 
+                          id = "svm", 
+                          predict.type = "response",
+                          type = "eps-regression",                         # epsilon-insensitive loss function
+                          gamma = gamma_fix,                               # kernel parameter (comment this line if the parameter shall be tuned)
+                          degree = 3,                                      # kernel parameter for polynomial kernel only (default value = 3; comment this line if the parameter shall be tuned)
+                          coef0 = 0,                                       # kernel parameter (default value = 0; comment this line if the parameter shall be tuned)
+                          fitted = FALSE)
 
 
 #--------------------------------------------------------------------------
@@ -35,7 +41,7 @@ if(benchmarking_sv){
 listLearners(task_training) %>% 
   as_tibble() %>% 
   filter(str_detect(name, regex("support", ignore_case = TRUE))) %>% 
-  select(class, name, short.name, package, note, se)
+  select(class, name, short.name, package, note, se, featimp)
 
 
 ## Learners ===============================================================
@@ -103,50 +109,58 @@ getParamSet("regr.ksvm")
 tuning_ps_sv.svm <- makeParamSet(
   makeDiscreteLearnerParam("kernel", 
                            values = c("polynomial", "radial", "sigmoid"), # define different kernels to use in SVR
-                           default = "radial"),
+                           #values = c("sigmoid"),                         # if only sigmoid
+                           #default = "sigmoid"
+                           ),
+  # makeNumericParam("coef0",                                             # define tuning parameter for the polynomial degree for polynomial kernel
+  #                  lower = 0,                                           # lower value is 1 which equals a linear kernel
+  #                  upper = 10,                                          # upper value 10 is reasonable
+  #                  trafo = function(x) ceiling(x),                      # function applied to parameter values (here ceiling to assure that parameters are integers)
+  #                  requires = quote(kernel != "radial")),
   # makeNumericParam("degree",                                            # define tuning parameter for the polynomial degree for polynomial kernel
   #                  lower = 1,                                           # lower value is 1 which equals a linear kernel
   #                  upper = 10,                                          # upper value 10 is reasonable
-  #                  trafo = function(x) ceiling(x)),                     # function applied to parameter values (here ceiling to assure that parameters are integers)
-  # makeNumericParam("gamma",                                             # General remark: in radial kernel gamma reflects how far the influence of a single training example reaches, with low values meaning 'far' and high values meaning 'close'. The gamma parameters can be seen as the inverse of the radius of influence of samples selected by the model as support vectors.
-  #                  lower = 0.1*ncol(data_training),                     # gamma should capture the the inverse dimension of the input space. A good starting point could be 1/0.1*dimension
-  #                  upper = 1*ncol(data_training),                       # upper limit of gamma could the inverse of the dimension itself (1/dim)
+  #                  trafo = function(x) ceiling(x),                      # function applied to parameter values (here ceiling to assure that parameters are integers)
+  #                  requires = quote(kernel == "polynomial")),
+  # makeNumericParam("gamma",                                               # General remark: in radial kernel gamma reflects how far the influence of a single training example reaches, with low values meaning 'far' and high values meaning 'close'. The gamma parameters can be seen as the inverse of the radius of influence of samples selected by the model as support vectors.
+  #                  lower = 1/ncol(data_training),                         # gamma should capture the the inverse dimension of the input space. A good starting point could be 1/0.1*dimension
+  #                  upper = 10*1/ncol(data_training),                      # upper limit of gamma could the inverse of the dimension itself (1/dim)
   #                  trafo = function(x) x),
   makeNumericParam("cost", 
-                   lower = -5,                                            # as recommended in package documentation (consider transformation function)
-                   upper = 4,                                             # as recommended in package documentation (consider transformation function)
+                   lower = -3,                                            # as recommended in package documentation (consider transformation function)
+                   upper = -1,                                             # as recommended in package documentation (consider transformation function)
                    trafo = function(x) 10^x),
   makeNumericParam("epsilon", 
-                   lower = -9,                                            # as recommended in package documentation (consider transformation function)
+                   lower = -3,                                            # as recommended in package documentation (consider transformation function)
                    upper = 0,                                             # as recommended in package documentation (consider transformation function)
                    trafo = function(x) 10^x)
 )
 
 tuning_ps_sv.ksvm <- makeParamSet(
   makeDiscreteLearnerParam("kernel", 
-                           values = c("polydot", "rbfdot", "tanhdot"),    # define different kernels to use in SVR
+                           values = c("polydot", "rbfdot", "tanhdot"),   # define different kernels to use in SVR
                            default = "rbfdot"),
-  makeNumericParam("degree",                                            # define tuning parameter for the polynomial degree for polynomial kernel
-                   lower = 3,                                           # lower value is 1 which equals a linear kernel
-                   upper = 3,                                          # upper value 10 is reasonable
+  makeNumericParam("degree",                                             # define tuning parameter for the polynomial degree for polynomial kernel
+                   lower = 3,                                            # lower value is 1 which equals a linear kernel
+                   upper = 3,                                            # upper value 10 is reasonable
                    trafo = function(x) x,
                    tunable = FALSE,
-                   requires = quote(kernel == "polydot")),                     # function applied to parameter values (here ceiling to assure that parameters are integers)
-  makeNumericParam("sigma",                                             # General remark: in radial kernel gamma reflects how far the influence of a single training example reaches, with low values meaning 'far' and high values meaning 'close'. The gamma parameters can be seen as the inverse of the radius of influence of samples selected by the model as support vectors.
-                   lower = 1/ncol(data_training),                     # gamma should capture the the inverse dimension of the input space. A good starting point could be 1/0.1*dimension
-                   upper = 1/ncol(data_training),                       # upper limit of gamma could the inverse of the dimension itself (1/dim)
+                   requires = quote(kernel == "polydot")),               # function applied to parameter values (here ceiling to assure that parameters are integers)
+  makeNumericParam("sigma",                                              # General remark: in radial kernel gamma reflects how far the influence of a single training example reaches, with low values meaning 'far' and high values meaning 'close'. The gamma parameters can be seen as the inverse of the radius of influence of samples selected by the model as support vectors.
+                   lower = 1/ncol(data_training),                        # gamma should capture the the inverse dimension of the input space. A good starting point could be 1/0.1*dimension
+                   upper = 1/ncol(data_training),                        # upper limit of gamma could the inverse of the dimension itself (1/dim)
                    trafo = function(x) x,
                    tunable = FALSE,
                    requires = quote(kernel == "rbfddot")),
-  makeNumericParam("scale",                                             # General remark: in radial kernel gamma reflects how far the influence of a single training example reaches, with low values meaning 'far' and high values meaning 'close'. The gamma parameters can be seen as the inverse of the radius of influence of samples selected by the model as support vectors.
-                   lower = 1/ncol(data_training),                     # gamma should capture the the inverse dimension of the input space. A good starting point could be 1/0.1*dimension
-                   upper = 1/ncol(data_training),                       # upper limit of gamma could the inverse of the dimension itself (1/dim)
+  makeNumericParam("scale",                                              # General remark: in radial kernel gamma reflects how far the influence of a single training example reaches, with low values meaning 'far' and high values meaning 'close'. The gamma parameters can be seen as the inverse of the radius of influence of samples selected by the model as support vectors.
+                   lower = 1/ncol(data_training),                        # gamma should capture the the inverse dimension of the input space. A good starting point could be 1/0.1*dimension
+                   upper = 1/ncol(data_training),                        # upper limit of gamma could the inverse of the dimension itself (1/dim)
                    trafo = function(x) x,
                    tunable = FALSE,
                    requires = quote(kernel != c("rbfdot"))),
   makeNumericParam("offset",                                             # General remark: in radial kernel gamma reflects how far the influence of a single training example reaches, with low values meaning 'far' and high values meaning 'close'. The gamma parameters can be seen as the inverse of the radius of influence of samples selected by the model as support vectors.
-                   lower = 0,                     # gamma should capture the the inverse dimension of the input space. A good starting point could be 1/0.1*dimension
-                   upper = 0,                       # upper limit of gamma could the inverse of the dimension itself (1/dim)
+                   lower = 0,                                            # gamma should capture the the inverse dimension of the input space. A good starting point could be 1/0.1*dimension
+                   upper = 0,                                            # upper limit of gamma could the inverse of the dimension itself (1/dim)
                    trafo = function(x) x,
                    tunable = FALSE,
                    requires = quote(kernel != c("rbfdot"))),
@@ -161,6 +175,7 @@ tuning_ps_sv.ksvm <- makeParamSet(
 )
 
 
+
 ### Define optimization algorithm #########################################
 # Random search in first tuning stage is applied in this thesis
 tuning_control <- makeTuneControlRandom(maxit = tuning_factor*npar_sv)     # random search
@@ -169,7 +184,8 @@ tuning_control <- makeTuneControlRandom(maxit = tuning_factor*npar_sv)     # ran
 #tuning_control <- makeTuneControlIrace(maxExperiments = 200)              # promising tuning method (but not working on data in this thesis)
 
 # Alternatively grid search
-#tuning_control <- makeTuneControlGrid(resolution = tuning_resolution)     # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
+#tuning_design <- generateGridDesign(tuning_ps_sv.svm, resolution = c(gamma = 10, cost = 5, epsilon = 4), trafo = TRUE)
+#tuning_control <- makeTuneControlGrid(resolution = c(gamma = 10, cost = 5, epsilon = 4))     # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
 
 
 ### Tuning results ########################################################
@@ -184,13 +200,13 @@ tuning_results_sv.svm <- tuneParams(learner = learner_sv.svm,
                                     control = tuning_control, 
                                     show.info = TRUE)
 
-set.seed(333)
-tuning_results_sv.ksvm <- tuneParams(learner = learner_sv.ksvm,
-                                     task = task_training,
-                                     resampling = cv_tuning,
-                                     par.set = tuning_ps_sv.ksvm,
-                                     control = tuning_control,
-                                     show.info = TRUE)
+# set.seed(333)
+# tuning_results_sv.ksvm <- tuneParams(learner = learner_sv.ksvm,
+#                                      task = task_training,
+#                                      resampling = cv_tuning,
+#                                      par.set = tuning_ps_sv.ksvm,
+#                                      control = tuning_control,
+#                                      show.info = TRUE)
 
 ## Performance estimation =================================================
 # Outer loop of nested resampling
@@ -202,22 +218,24 @@ tuning_results_sv.ksvm <- tuneParams(learner = learner_sv.ksvm,
 learner_tuned_sv.svm <- setHyperPars(learner = learner_sv.svm,
                                      kernel = tuning_results_sv.svm$x$kernel,
                                      cost = tuning_results_sv.svm$x$cost,
-                                     epsilon = tuning_results_sv.svm$x$epsilon)
+                                     epsilon = tuning_results_sv.svm$x$epsilon
+                                     #gamma = tuning_results_sv.svm$x$gamma
+                                     )
 
-learner_tuned_sv.ksvm <- setHyperPars(learner = learner_sv.ksvm,
-                                      kernel = tuning_results_sv.ksvm$x$kernel,
-                                      C = tuning_results_sv.ksvm$x$C,
-                                      epsilon = tuning_results_sv.ksvm$x$epsilon#,
-                                      #degree = 3,
-                                      #sigma = 1/ncol(data_training),
-                                      #scale = 1/ncol(data_training),
-                                      #offset = 0
-                                      )
+# learner_tuned_sv.ksvm <- setHyperPars(learner = learner_sv.ksvm,
+#                                       kernel = tuning_results_sv.ksvm$x$kernel,
+#                                       C = tuning_results_sv.ksvm$x$C,
+#                                       epsilon = tuning_results_sv.ksvm$x$epsilon,
+#                                       #degree = 3,
+#                                       #sigma = 1/ncol(data_training),
+#                                       scale = 1/ncol(data_training),
+#                                       offset = 0
+#                                       )
 
 
 
-learner_list <- list(learner_tuned_sv.svm,
-                     learner_tuned_sv.ksvm
+learner_list <- list(learner_tuned_sv.svm#,
+                     #learner_tuned_sv.ksvm
 )
 
 ### Performance results ###################################################
@@ -244,15 +262,9 @@ if(finetuning_sv){
 # Finetuning --------------------------------------------------------------
 ## Learner ================================================================
 
+# see Steering
 
-learner_sv.svm <- makeLearner(cl = "regr.svm", 
-                              id = "svm", 
-                              predict.type = "response",
-                              type = "eps-regression",                    # epsilon-insensitive loss function
-                              gamma = 1/ncol(data_training),              # kernel parameter (comment this line if the parameter shall be tuned)
-                              degree = 3,                                 # kernel parameter for polynomial kernel only (default value = 3; comment this line if the parameter shall be tuned)
-                              coef0 = 0,                                  # kernel parameter (default value = 0; comment this line if the parameter shall be tuned)
-                              fitted = FALSE)
+  
 ## Tuning =================================================================
 # Inner loop of nested resampling
 # Note: Hyperparameters are tuned only once on overall training data (data_training) using time series cross validation.
@@ -262,7 +274,7 @@ learner_sv.svm <- makeLearner(cl = "regr.svm",
 
 ### Create hyperparameter set #############################################
 
-tuning_ps_sv.svm <- makeParamSet(
+tuning_ps_sv <- makeParamSet(
   makeDiscreteLearnerParam("kernel", 
                            values = kern),                                # define best kernel to use in SVR
   # makeNumericParam("degree",                                            # define tuning parameter for the polynomial degree for polynomial kernel
@@ -270,21 +282,21 @@ tuning_ps_sv.svm <- makeParamSet(
   #                  upper = 10,                                          # upper value 10 is reasonable
   #                  trafo = function(x) ceiling(x)),                     # function applied to parameter values (here ceiling to assure that parameters are integers)
   # makeNumericParam("gamma",                                             # General remark: in radial kernel gamma reflects how far the influence of a single training example reaches, with low values meaning 'far' and high values meaning 'close'. The gamma parameters can be seen as the inverse of the radius of influence of samples selected by the model as support vectors.
-  #                  lower = 0.1*ncol(data_training),                     # gamma should capture the the inverse dimension of the input space. A good starting point could be 1/0.1*dimension
-  #                  upper = 1*ncol(data_training),                       # upper limit of gamma could the inverse of the dimension itself (1/dim)
+  #                  lower = gamma_low,                                   # gamma should capture the the inverse dimension of the input space. A good starting point could be 1/0.1*dimension
+  #                  upper = gamma_up,                                    # upper limit of gamma could the inverse of the dimension itself (1/dim)
   #                  trafo = function(x) x),
   makeNumericParam("cost", 
-                   lower = cost_low,                                      # as recommended in package documentation (consider transformation function)
-                   upper = cost_up,                                       # as recommended in package documentation (consider transformation function)
+                   lower = cost_low,                                      
+                   upper = cost_up,                                       
                    trafo = function(x) x),
   makeNumericParam("epsilon", 
-                   lower = epsilon_low,                                   # as recommended in package documentation (consider transformation function)
-                   upper = epsilon_up,                                    # as recommended in package documentation (consider transformation function)
+                   lower = epsilon_low,                                   
+                   upper = epsilon_up,                                    
                    trafo = function(x) x)
 )
 ### Define optimization algorithm #########################################
 # Grid search is applied in this thesis
-tuning_control <- makeTuneControlGrid(resolution = tuning_resolution)      # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
+tuning_control <- makeTuneControlGrid(resolution = tuning_resolution)     # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
 
 
 ### Tuning results ########################################################
@@ -292,12 +304,12 @@ parallelMap::parallelStartSocket(cpus = 4,
                                  show.info = TRUE)
 
 set.seed(333)
-finetuning_results_sv.svm <- tuneParams(learner = learner_sv.svm,
-                                        task = task_training,
-                                        resampling = cv_tuning,
-                                        par.set = tuning_ps_sv.svm, 
-                                        control = tuning_control, 
-                                        show.info = TRUE)
+finetuning_results_sv <- tuneParams(learner = learner_sv,
+                                    task = task_training,
+                                    resampling = cv_tuning,
+                                    par.set = tuning_ps_sv, 
+                                    control = tuning_control, 
+                                    show.info = TRUE)
 
 ## Performance estimation =================================================
 # Outer loop of nested resampling
@@ -307,22 +319,24 @@ finetuning_results_sv.svm <- tuneParams(learner = learner_sv.svm,
 
 ### Redefine learner given optimal parameters #############################
 
-learner_tuned_sv.svm <- setHyperPars(learner = learner_sv.svm,
-                                     kernel = finetuning_results_sv.svm$x$kernel,
-                                     cost = finetuning_results_sv.svm$x$cost,
-                                     epsilon = finetuning_results_sv.svm$x$epsilon)
+learner_tuned_sv <- setHyperPars(learner = learner_sv,
+                                     kernel = finetuning_results_sv$x[[1]],
+                                     cost = finetuning_results_sv$x[[2]],
+                                     epsilon = finetuning_results_sv.$x[[3]]#,
+                                     #gamma = finetuning_results_sv.svm$x$gamma
+                                     )
 
 
 ### Performance results ###################################################
 
 
 set.seed(333)
-performance_results_sv.svm <- resample(learner = learner_tuned_sv.svm,
-                                       task = task_overall,
-                                       resampling = cv_test,
-                                       measures = rmse,
-                                       keep.pred = TRUE,
-                                       show.info = TRUE)
+performance_results_sv <- resample(learner = learner_tuned_sv,
+                                   task = task_overall,
+                                   resampling = cv_test,
+                                   measures = rmse,
+                                   keep.pred = TRUE,
+                                   show.info = TRUE)
 
 parallelMap::parallelStop()
 
@@ -331,3 +345,7 @@ parallelMap::parallelStop()
 
 
 }
+
+
+
+beep(sound = 2)                                                            # signalling that execution has been finished

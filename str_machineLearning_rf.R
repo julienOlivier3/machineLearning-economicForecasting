@@ -3,8 +3,8 @@
 setwd("J:\\Studium\\Master\\Masterthesis")
 
 # Tuning stage
-benchmarking_rf <- FALSE
-finetuning_rf <- TRUE
+benchmarking_rf <- TRUE
+finetuning_rf <- FALSE
 
 # First-stage tuning setup
 npar_rf <- 3      # Number of tuning parameters
@@ -13,11 +13,12 @@ npar_rf <- 3      # Number of tuning parameters
 # Final learner
 learner_rf <- makeLearner(cl = "regr.randomForest",                   
                           id = "randomForest",                        
-                          predict.type = "se",                           # special prediction in regression tasks (mean response AND standard errors)
+                          predict.type = "se",                            # special prediction in regression tasks (mean response AND standard errors)
                           #maxnodes = NULL,                               # maximum number of terminal nodes trees in the forest can have. This parameter is ignored. Steering of tree size via nodesize.
-                          replace = FALSE,                               # no replacement of observations in training set (not valid for time series). Note: Argument sampsize defines the size(s) of sample to draw, default is .632 times the sample size.
+                          replace = FALSE,                                # no replacement of observations in training set (not valid for time series). Note: Argument sampsize defines the size(s) of sample to draw, default is .632 times the sample size.
                           #sampsize = 1,                                  # all observations in training data are used for training (i.e. no bootstrapping any more)
-                          #na.action = na.omit                            # omit observations with missings (but data is balanced anyway, imputation takes place beforehand)
+                          #na.action = na.omit,                           # omit observations with missings (but data is balanced anyway, imputation takes place beforehand)
+                          importance = TRUE                               # return the variable importance measures (for randomForest::randomForest there are two vim measures: 1) mean decrease inaccuracy, 2) mean decrease in node impurity (see package description for more details)
                           )                           
 
 # Name of tuning parameters
@@ -27,16 +28,22 @@ nodesize_rf <- "nodesize"
 
 # Search space boundaries
 ntree_low <- 250
-ntree_up <- 550
-mtry_low <- 130
-mtry_up <- 180
-nodesize_low <- 20
-nodesize_up <- 70
+ntree_up <- 750
+mtry_low <- 100
+mtry_up <- 200
+nodesize_low <- 70
+nodesize_up <- 80
 
 #--------------------------------------------------------------------------
 
 if(benchmarking_rf){
 # Algorithm benchmarking --------------------------------------------------
+# List learners with 'support' in name suitbale for the respective task
+listLearners(task_training) %>% 
+  as_tibble() %>% 
+  filter(str_detect(name, regex("forest", ignore_case = TRUE))) %>% 
+  select(class, name, short.name, package, note, se, featimp)
+  
 ## Learners ===============================================================
 
 learner_rf.rf <- makeLearner(cl = "regr.randomForest",                   
@@ -63,8 +70,8 @@ learner_rf.ranger <- makeLearner(cl = "regr.ranger",
                                  predict.type = "se",
                                  #max.depth = NULL,                          # maximal tree depth. This parameter is ignored. Steering of tree size via min.node.size.
                                  replace = FALSE,                           # no replacement of observations in training set (not valid for time series). Note: Argument sample.fraction is the fraction of observations to sample. Default is 1 for sampling with replacement and 0.632 for sampling without replacement.
-                                 sample.fraction = 1)                       # all observations in training data are used for training (i.e. no bootstrapping any more)
-
+                                 #sample.fraction = 1                       # all observations in training data are used for training (i.e. no bootstrapping any more)
+                                )
 # Notes:
 # - for the result assessment later argument importance needs to adjusted accordingly
 # - for randomForestSRC implementation there is an argument called nsplit which defines 
@@ -107,7 +114,7 @@ getParamSet("regr.ranger")
 tuning_ps_rf.rf <- makeParamSet(
   makeNumericParam("ntree",                                                # define tuning parameter
                    lower = 10,                                             # lower value of continuous parameter space
-                   upper = 1000,                                           # upper value of parameter space
+                   upper = 500,                                            # upper value of parameter space
                    trafo = function(x) ceiling(x)),                        # function applied to parameter values (here ceiling to assure that parameters are integers)
   makeNumericParam("mtry", 
                    lower = floor(ncol(data_training)*0.1),                 # fraction of possible feature is rounded down
@@ -124,7 +131,7 @@ tuning_ps_rf.rfSRC <- tuning_ps_rf.rf
 tuning_ps_rf.ranger <- makeParamSet(
   makeNumericParam("num.trees",                                            # define tuning parameter
                    lower = 10,                                             # lower value of continuous parameter space
-                   upper = 1000,                                           # upper value of parameter space
+                   upper = 500,                                            # upper value of parameter space
                    trafo = function(x) ceiling(x)),                        # function applied to parameter values (here ceiling to assure that parameters are integers)
   makeNumericParam("mtry", 
                    lower = floor(ncol(data_training)*0.1), 
@@ -163,19 +170,19 @@ tuning_results_rf.rf <- tuneParams(learner = learner_rf.rf,
 
 set.seed(333)
 tuning_results_rf.rfSRC <- tuneParams(learner = learner_rf.rfSRC,
-                                   task = task_training,
-                                   resampling = cv_tuning,
-                                   par.set = tuning_ps_rf.rfSRC, 
-                                   control = tuning_control, 
-                                   show.info = TRUE)
+                                      task = task_training,
+                                      resampling = cv_tuning,
+                                      par.set = tuning_ps_rf.rfSRC, 
+                                      control = tuning_control, 
+                                      show.info = TRUE)
 
 set.seed(333)
 tuning_results_rf.ranger <- tuneParams(learner = learner_rf.ranger,
-                                   task = task_training,
-                                   resampling = cv_tuning,
-                                   par.set = tuning_ps_rf.ranger, 
-                                   control = tuning_control, 
-                                   show.info = TRUE)
+                                       task = task_training,
+                                       resampling = cv_tuning,
+                                       par.set = tuning_ps_rf.ranger, 
+                                       control = tuning_control, 
+                                       show.info = TRUE)
 
 ## Performance estimation =================================================
 # Outer loop of nested resampling
@@ -313,7 +320,8 @@ performance_results_rf <- resample(learner = learner_tuned_rf,
                                    resampling = cv_test,
                                    measures = rmse,
                                    keep.pred = TRUE,
-                                   show.info = TRUE)
+                                   show.info = TRUE, 
+                                   models = TRUE)                          # return all fitted models (required for later assessment of model importance)
 
 parallelMap::parallelStop()
 
@@ -323,4 +331,5 @@ parallelMap::parallelStop()
 
 }
 
+beep(sound = 2)
 

@@ -13,13 +13,24 @@ forecasting_intervals <- 95       # Set forecasting confidence intervals
                                   # only based on training data training_start ~ training_end.
                                   # It does not extend the training sample iteratively.)
 # ARIMA
-ARIMA_order <- c(1, 0, 0)
+ARIMA_order <- c(2, 0, 0)
 
 # VAR
-VAR_variables <- c("MOST_RECENT", 
+# Keynesian structural VAR
+VAR_variables <- c("REAL_GDP_GROWTH", 
                    "FEDFUNDS", 
                    "UNRATE", 
                    "CPIAUCSL")
+
+# Leading indicator VAR
+VAR_variables <- c("REAL_GDP_GROWTH",
+                   "HOUST",
+                   "AMDMN_OX",
+                   "S_P_500",
+                   "UMCSEN_TX",
+                   "AWHMAN",
+                   "CPF3MTB3MX")
+
 VAR_order <- 2
 
 #--------------------------------------------------------------------------
@@ -27,23 +38,19 @@ VAR_order <- 2
 source(file = file.path(getwd(), "Code", "src_setup.R"))
 
 # Read data ---------------------------------------------------------------
-load(file = file.path(getwd(), "Data", "tidy_data", "tidy_yx_yq.RData"))
+load(file = file.path(getwd(), "Results", "tidy_data", "tidy_yx_yq_stat.RData"))
 
 
 
-# Model estimation & forecasting ------------------------------------------
 
+
+# Filter data -------------------------------------------------------------
 # Change data type of last observation of training data
 training_end <- training_end %>% 
-  yearquarter()
+  yearquarter() - (forecasting_periods-1)
 
-# Data cleaning
-tidy_yx_yq <- tidy_yx_yq %>% 
-  mutate(FIRST = ifelse(is.na(FIRST), SECOND, FIRST),                      # simple imputation for missing values of different gdq figures
-         SECOND = ifelse(is.na(SECOND), (FIRST+THIRD)/2, SECOND),
-         THIRD = ifelse(is.na(THIRD), SECOND, THIRD)) %>% 
-  drop_na(FIRST:MOST_RECENT) %>%                                           # drop all rows with NA values for GDP
-  drop_cols_any_na() %>%                                                   # drop all columns with any NA
+# Data filtering
+tidy_yx_yq_stat <- tidy_yx_yq_stat %>% 
   as_tsibble(index = DATE_QUARTER) %>%                                     # create tsibble with DATE_QUARTER as time index variable
   { if(exists("training_start"))                                           # filter dates if training starts at a later date as compared to existing history 
            filter_index(., yearquarter(training_start) ~ .)
@@ -53,25 +60,26 @@ tidy_yx_yq <- tidy_yx_yq %>%
 
 # Extract last observation period of overall data set
 if(!exists("testing_end")){                                                # ..either the last quarter from data set
-  testing_end <- tidy_yx_yq %>% 
+  testing_end <- tidy_yx_yq_stat %>% 
   select(DATE_QUARTER) %>% 
   filter(rownames(.) == nrow(.)) %>% 
   as_tibble() %>% 
   deframe() %>% 
-  yearquarter()
+  yearquarter() - (forecasting_periods-1)
 } else {                                                                   # ..or according to the input in the steering fold
   testing_end <- testing_end %>% 
-    yearquarter()
+    yearquarter() - (forecasting_periods-1)
 }
 
 # Calculate number of different training iterations
-trainings <- as.numeric(testing_end - training_end)/forecasting_periods
+trainings <- as.numeric(testing_end - training_end)#/forecasting_periods
 
 
 
 
-#--------------------------------------------------------------------------
+# Model estimation & forecasting ------------------------------------------
 # Initialize empty lists
+RW_temp <- list()
 ARIMA_temp <- list()
 VAR_temp <- list()
 
@@ -83,13 +91,56 @@ testing_start <- training_end + i
 # Calculate last forecasting quarter
 last_forecast <- training_end + i + (forecasting_periods - 1)
 
-# ARIMA ===================================================================
-ARIMA_temp[[i]] <- tidy_yx_yq %>% 
+
+
+## RW =====================================================================
+# Random Walk as simple benchmark
+RW_temp[[i]] <- tidy_yx_yq_stat %>% 
+  nest(.key = DATA) %>% 
+  mutate(MODEL_ID = "RW",                                                  # define model identifier
+         TRAINING_DATA = map(DATA, ~ filter_index(., ~ training_end + (i-1)) %>% 
+                               as_tibble() %>% 
+                               select(REAL_GDP_GROWTH)),                       # define data required for training the model 
+         TRAINING_END = training_end + (i-1),                              # define last quarter of training data
+         MODEL = map(TRAINING_DATA,                                        # estimate model
+                     ~ arima(., order = c(0,1,0),                          # radom walk setting: y_t - y_(t-1) = eps_t 
+                             #include.constant = FALSE,                     # no drifting paramter which would make the series trending and thus non-stationary
+                             include.mean = FALSE)),                       # see package description (mean does not affext fit nor prediction if series is differenced)
+         FORECAST_OBJECT = map(MODEL,                                      # create own variable for the forecasting object
+                               ~ predict(., n.ahead = forecasting_periods,      
+                                          level = forecasting_intervals,
+                                         interval = "confidence")),
+         FORECAST_PERIOD = map(DATA,                                       
+                               ~ yearquarter(seq(as.Date(testing_start),   # define forecasted period
+                                                 as.Date(last_forecast), 
+                                                 by = "quarter"))),
+         PERIODS_AHEAD = map(., ~ 1:forecasting_periods),                  # define indicator for the number of periods ahead forecasted by the model
+         TRUE_VALUE = map(DATA, ~ select(.,DATE_QUARTER, REAL_GDP_GROWTH) %>%  # extract the realized GDP growth in that period
+                            filter_index(testing_start ~ last_forecast) %>% 
+                            as_tibble(.) %>% 
+                            select(.,REAL_GDP_GROWTH) %>% 
+                            { if(nrow(.) == forecasting_periods) . else add_row(., REAL_GDP_GROWTH=rep(NA, forecasting_periods-nrow(.))) } %>%        
+                            # if forecast is in the future (i.e. there is no actual realization yet), fill with NA
+                            unlist()),
+         MEAN = map(FORECAST_OBJECT, ~ .$pred[1:forecasting_periods]),     # extract point forecast
+         LOWER = map(FORECAST_OBJECT,                                      # calculate lower confidence level
+                     ~ .$pred[1:forecasting_periods] 
+                     + qnorm(p = (100-forecasting_intervals)/2/100)*.$se[1:forecasting_periods]),    
+         UPPER = map(FORECAST_OBJECT,                                      # calculate upper confidence level
+                     ~ .$pred[1:forecasting_periods] 
+                     + qnorm(p = forecasting_intervals/100 + (100-forecasting_intervals)/2/100)*.$se[1:forecasting_periods])) %>% 
+  select(TRAINING_END, everything())
+
+
+
+
+## ARIMA ==================================================================
+ARIMA_temp[[i]] <- tidy_yx_yq_stat %>% 
   nest(.key = DATA) %>% 
   mutate(MODEL_ID = "ARIMA",                                               # define model identifier
          TRAINING_DATA = map(DATA, ~ filter_index(., ~ training_end + (i-1)) %>% 
                                as_tibble() %>% 
-                               select(MOST_RECENT)),                       # define data required for training the model 
+                               select(REAL_GDP_GROWTH)),                       # define data required for training the model 
          TRAINING_END = training_end + (i-1),                              # define last quarter of training data
          MODEL = map(TRAINING_DATA,                                        # estimate model
                      ~ Arima(., order = ARIMA_order, 
@@ -102,11 +153,11 @@ ARIMA_temp[[i]] <- tidy_yx_yq %>%
                                                        as.Date(last_forecast), 
                                                        by = "quarter"))),
          PERIODS_AHEAD = map(., ~ 1:forecasting_periods),                  # define indicator for the number of periods ahead forecasted by the model
-         TRUE_VALUE = map(DATA, ~ select(.,DATE_QUARTER, MOST_RECENT) %>%  # extract the realized GDP growth in that period
+         TRUE_VALUE = map(DATA, ~ select(.,DATE_QUARTER, REAL_GDP_GROWTH) %>%  # extract the realized GDP growth in that period
                             filter_index(testing_start ~ last_forecast) %>% 
                             as_tibble(.) %>% 
-                            select(.,MOST_RECENT) %>% 
-                            { if(nrow(.) == forecasting_periods) . else add_row(., MOST_RECENT=rep(NA, forecasting_periods-nrow(.))) } %>%        
+                            select(.,REAL_GDP_GROWTH) %>% 
+                            { if(nrow(.) == forecasting_periods) . else add_row(., REAL_GDP_GROWTH=rep(NA, forecasting_periods-nrow(.))) } %>%        
                             # if forecast is in the future (i.e. there is no actual realization yet), fill with NA
                             unlist()),
          MEAN = map(FORECAST_OBJECT, ~ .$mean[1:forecasting_periods]),     # extract point forecast
@@ -115,19 +166,15 @@ ARIMA_temp[[i]] <- tidy_yx_yq %>%
   select(TRAINING_END, everything())
 
 
-# VAR =====================================================================
-VAR_temp[[i]] <- tidy_yx_yq %>% 
+
+
+## VAR ====================================================================
+VAR_temp[[i]] <- tidy_yx_yq_stat %>% 
   nest(.key = DATA) %>% 
   mutate(MODEL_ID = "VAR",
          TRAINING_DATA = map(DATA, ~ filter_index(., ~ training_end + (i-1)) %>% 
                                as_tibble() %>% 
-                               select(VAR_variables) %>% 
-                               mutate(FEDFUNDS_STAT = c(NA, diff(FEDFUNDS)),                         # first difference of interest rate
-                                      UNRATE_STAT = c(NA, diff(UNRATE)),                             # first difference of unemployment rate
-                                      CPIAUCSL_STAT = c(NA, NA, diff(log(CPIAUCSL),                  # second difference of log of inflation rate
-                                                                     differences = 2)*100)) %>% 
-                               select(MOST_RECENT, FEDFUNDS_STAT, UNRATE_STAT, CPIAUCSL_STAT) %>% 
-                               na.omit(.)),
+                               select(VAR_variables)),
          TRAINING_END = training_end + (i-1),
          MODEL = map(TRAINING_DATA, 
                      ~ as.ts(.) %>% 
@@ -140,16 +187,16 @@ VAR_temp[[i]] <- tidy_yx_yq %>%
                                                        as.Date(last_forecast), 
                                                        by = "quarter"))),
          PERIODS_AHEAD = map(., ~ 1:forecasting_periods),
-         TRUE_VALUE = map(DATA, ~ select(.,DATE_QUARTER, MOST_RECENT) %>%  # extract the realized GDP growth in that period
+         TRUE_VALUE = map(DATA, ~ select(.,DATE_QUARTER, REAL_GDP_GROWTH) %>%  # extract the realized GDP growth in that period
                             filter_index(testing_start ~ last_forecast) %>% 
                             as_tibble(.) %>% 
-                            select(.,MOST_RECENT) %>% 
-                            { if(nrow(.) == forecasting_periods) . else add_row(., MOST_RECENT=rep(NA, forecasting_periods-nrow(.))) } %>%        
+                            select(.,REAL_GDP_GROWTH) %>% 
+                            { if(nrow(.) == forecasting_periods) . else add_row(., REAL_GDP_GROWTH=rep(NA, forecasting_periods-nrow(.))) } %>%        
                             # if forecast is in the future (i.e. there is no actual realization yet), fill with NA
                             unlist()),
-         MEAN = map(FORECAST_OBJECT, ~ .$forecast$MOST_RECENT$mean[1:forecasting_periods]),
-         LOWER = map(FORECAST_OBJECT, ~ .$forecast$MOST_RECENT$lower[1:forecasting_periods]),
-         UPPER = map(FORECAST_OBJECT, ~ .$forecast$MOST_RECENT$upper[1:forecasting_periods])) %>% 
+         MEAN = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$mean[1:forecasting_periods]),
+         LOWER = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$lower[1:forecasting_periods]),
+         UPPER = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$upper[1:forecasting_periods])) %>% 
   select(TRAINING_END, everything())
 
 }
@@ -161,46 +208,89 @@ ARIMA_model <- ARIMA_temp %>%
 VAR_model <- VAR_temp %>%
   bind_rows() %>% 
   mutate(TRAINING_END = yearquarter(TRAINING_END))
+RW_model <- RW_temp %>%
+  bind_rows() %>% 
+  mutate(TRAINING_END = yearquarter(TRAINING_END))
 
 
+# Extract forecast error of RW model for relative error measures
+rw_error <- RW_model %>% 
+  select(PERIODS_AHEAD, MEAN) %>% 
+  as_tibble() %>% 
+  unnest() %>% 
+  filter(PERIODS_AHEAD == forecasting_periods) %>% 
+  select(MEAN)
+
+
+# Unnest results and calculate error measures
 forecasting_models <- ARIMA_model %>% 
   bind_rows(VAR_model) %>% 
-  select(MODEL_ID, TRAINING_END, PERIODS_AHEAD, FORECAST_PERIOD, TRUE_VALUE, MEAN, LOWER, UPPER) %>% 
+  bind_rows(RW_model) %>% 
+  select(MODEL_ID, TRAINING_END, PERIODS_AHEAD, FORECAST_PERIOD, 
+         TRUE_VALUE, MEAN, LOWER, UPPER) %>% 
+  as_tibble() %>% 
   unnest() %>% 
+  filter(PERIODS_AHEAD == forecasting_periods) %>%                        # only extract the forecast which equals the stepsize in the one-step-ahead forecast (e.g. for a one year one-step-ahead forecast the forecast of interest is the 4-step ahead forecast in time series models (based on quarterly data))
   mutate(TRAINING_END = yearquarter(TRAINING_END),
-         FORECAST_PERIOD = yearquarter(FORECAST_PERIOD))
+         FORECAST_PERIOD = yearquarter(FORECAST_PERIOD),
+         ERROR = TRUE_VALUE - MEAN,
+         REL_ERROR = MEAN/as_vector(rw_error))
 
-# Model performance
+
+
+# Generalization model performance
 forecasting_models %>%
-  mutate(ERROR = TRUE_VALUE - MEAN) %>%
-  group_by(MODEL_ID) %>% 
-  summarise(ME = mean(ERROR),
-            MSE = mean(ERROR^2),
-            RMSE = sqrt(mean(ERROR^2)))
+  group_by(MODEL_ID) %>%             
+  summarise(MSE = mean(ERROR^2),                                           # calculate mean squared error (MSE)
+            RMSE = sqrt(mean(ERROR^2)),                                    # calculate root mean squared error (RMSE)
+            MdRAE = median(abs(REL_ERROR))) %>%                            # calculate Median Relative Absolute Error (MdRAE)
+  ungroup() %>%  
+  mutate(RelRMSE = RMSE/(.[.$MODEL_ID=="RW", "RMSE"] %>% pull()))          # calculate relative RMSE (RelRMSE); for this purpose extract RMSE for Random Walk and pull it as numeric value from the tibble
 
 
 
-# Visualization
-tidy_yx_yq %>% 
-  select(DATE_QUARTER, MOST_RECENT) %>% 
-  mutate(ARIMA = NA,
+
+
+# Test for significance ---------------------------------------------------
+# Diebold-Mariano test for predictive accuracy
+dm.test(e1 = as_vector(forecasting_models[forecasting_models$MODEL_ID == "RW", "ERROR"]),
+        e2 = as_vector(forecasting_models[forecasting_models$MODEL_ID == "ARIMA", "ERROR"]),
+        alternative = "greater",                                           # if p < 0.1 one can reject the H_0 in favor of the the alternative hypothesis which states that method 2 is more accurate than method 1
+        h = 1,                                                             # forecasting horizon to produce these forecasts is 1
+        power = 2)                                                         # power used in the loss function is 2 (MSE)
+
+dm.test(e1 = as_vector(forecasting_models[forecasting_models$MODEL_ID == "RW", "ERROR"]),
+        e2 = as_vector(forecasting_models[forecasting_models$MODEL_ID == "VAR", "ERROR"]),
+        alternative = "greater",
+        h = 1,
+        power = 2)
+
+
+
+# Visualization -----------------------------------------------------------
+tidy_yx_yq_stat %>% 
+  select(DATE_QUARTER, REAL_GDP_GROWTH) %>% 
+  mutate(RW = NA,
+         ARIMA = NA,
          VAR = NA) %>% 
-  melt(id = c("DATE_QUARTER", "MOST_RECENT"), variable.name = "MODEL_ID") %>% 
+  melt(id = c("DATE_QUARTER", "REAL_GDP_GROWTH"), variable.name = "MODEL_ID") %>% 
   as_tibble() %>% 
   mutate(MODEL_ID = as.character(MODEL_ID)) %>% 
   select(-value) %>% 
   left_join(forecasting_models, by = c("DATE_QUARTER" = "FORECAST_PERIOD", "MODEL_ID")) %>% 
-  select(MODEL_ID, DATE_QUARTER, MOST_RECENT, MEAN, LOWER, UPPER) %>%
+  select(MODEL_ID, DATE_QUARTER, REAL_GDP_GROWTH, MEAN, LOWER, UPPER) %>%
   mutate(DATE_QUARTER = yearquarter(DATE_QUARTER)) %>% 
   ggplot() +
-  geom_line(aes(x = DATE_QUARTER, y = MOST_RECENT), linetype = 5) +
+  geom_line(aes(x = DATE_QUARTER, y = REAL_GDP_GROWTH), linetype = 5) +
   geom_line(aes(x = DATE_QUARTER, y = MEAN), color = "red") +
   geom_ribbon(aes(x = DATE_QUARTER, ymin = LOWER, ymax = UPPER), fill = "blue", alpha = .25) +
   facet_wrap(~ MODEL_ID, dir = "v") +
   theme_thesis
 
 
-# Temporary ---------------------------------------------------------------
+#--------------------------------------------------------------------------
+# Miscellaneous -----------------------------------------------------------
+
 # Forecast checking
 psi_1 <- ARIMA_model$MODEL[1][[1]]$coef[1]
 mu <- ARIMA_model$MODEL[1][[1]]$coef[2]
@@ -213,15 +303,15 @@ psi_1*y_t_1 + c # forecast value
 ARIMA_model$FORECAST_OBJECT[1][[1]]$mean[1]
 
 # Accuracy checking
-accuracy(forecast(Arima(tidy_yx_yq$MOST_RECENT[1:nrow(ARIMA_model$TRAINING_DATA[[1]])], order = c(1,0,0)), h = 52), 
-         x = ARIMA_model$DATA[[1]]$MOST_RECENT[(nrow(ARIMA_model$TRAINING_DATA[[1]])+1):nrow(ARIMA_model$DATA[[1]])])
+accuracy(forecast(Arima(tidy_yx_yq_stat$REAL_GDP_GROWTH[1:nrow(ARIMA_model$TRAINING_DATA[[1]])], order = c(1,0,0)), h = 52), 
+         x = ARIMA_model$DATA[[1]]$REAL_GDP_GROWTH[(nrow(ARIMA_model$TRAINING_DATA[[1]])+1):nrow(ARIMA_model$DATA[[1]])])
 
-tidy_yx_yq %>% 
-  select(DATE_QUARTER, MOST_RECENT) %>% 
+tidy_yx_yq_stat %>% 
+  select(DATE_QUARTER, REAL_GDP_GROWTH) %>% 
   nest(.key = DATA) %>% 
   mutate(MODEL = map(DATA, ~ filter_index(., ~ training_end) %>%
                        as_tibble() %>% 
-                       select(MOST_RECENT) %>% 
+                       select(REAL_GDP_GROWTH) %>% 
                           Arima(., order = ar_order, include.constant = TRUE)), 
          FORECAST_OBJECT = map(MODEL, ~ forecast(., h = 52, level = forecasting_intervals)),
          MEAN = map(FORECAST_OBJECT, ~ .$mean[1:52]),

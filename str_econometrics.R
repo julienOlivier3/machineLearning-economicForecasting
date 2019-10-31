@@ -100,7 +100,7 @@ RW_temp[[i]] <- tidy_yx_yq_stat %>%
   mutate(MODEL_ID = "RW",                                                  # define model identifier
          TRAINING_DATA = map(DATA, ~ filter_index(., ~ training_end + (i-1)) %>% 
                                as_tibble() %>% 
-                               select(REAL_GDP_GROWTH)),                       # define data required for training the model 
+                               select(REAL_GDP_GROWTH)),                   # define data required for training the model 
          TRAINING_END = training_end + (i-1),                              # define last quarter of training data
          MODEL = map(TRAINING_DATA,                                        # estimate model
                      ~ arima(., order = c(0,1,0),                          # radom walk setting: y_t - y_(t-1) = eps_t 

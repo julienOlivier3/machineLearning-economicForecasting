@@ -74,17 +74,19 @@ theme_thesis <- theme(
   panel.background = element_blank(),
   panel.grid.major.y = element_line(color = "grey90", size = 0.5),
   panel.grid.minor.y = element_line(color = "grey90", size = 0.5),
-  panel.grid.major.x = element_line(color = "grey90", size = 0.5),
-  panel.grid.minor.x = element_line(color = "grey90", size = 0.5),
+  panel.grid.major.x = element_blank(),
+  panel.grid.minor.x = element_blank(),
   #panel.grid.major.x = element_blank(),
   #panel.border = element_rect(fill = NA, color = "grey20"),
   #axis.text.x = element_text(family = "Arial", angle = 45, hjust = 1),
-  axis.text.x = element_text(family = "Arial"),
-  axis.text.y = element_text(family = "Arial"),
+  axis.text.x = element_text(color = "black"),
+  axis.text.y = element_text(color = "black"),
+  axis.title = element_text(size = 12, face = "bold"),
   #axis.title.y = element_text(family = "Arial", margin = margin(t = 0, r = 20, b = 0, l = 0)), # not working?
   #axis.title.x = element_text(family = "Arial", margin = margin(t = 0, r = 0, b = 20, l = 0)),
-  plot.title = element_text(size = 15, hjust = 0, family = "Arial"),
-  legend.key = element_blank())
+  plot.title = element_text(size = 15, hjust = 0),
+  legend.key = element_blank(),
+  axis.ticks = element_blank())
 
 # Specify geom to update, and list attibutes you want to change appearance of
 update_geom_defaults("line", list(size = 1))

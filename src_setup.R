@@ -163,15 +163,96 @@ function_stationary <- function(data, tcode, date_index = "DATE_QUARTER", ppt = 
   
 }
 ## Stationarity testing function ==========================================
-function_stationary_tests <- function(df){
-  p <- ncol(df)
-  df_multi <- data.frame(VAR = names(df),
-                         #DF_PVALUE = sapply(df, function(v) ur.df(ts(v[!is.na(v)]), type = "drift", selectlags = "BIC"))  # no direct p-value (see below)
-                         ADF_PVALUE = sapply(df, function(v) adf.test(ts(v[!is.na(v)]), alternative = "stationary")$p.value),
-                         KPSS_PVALUE = sapply(df, function(v) kpss.test(ts(v[!is.na(v)]), null = "Level")$p.value)
-  )
-  df_multi$ADF <- df_multi$ADF_PVALUE < 0.05
-  df_multi$KPSS <- df_multi$KPSS_PVALUE > 0.05  # H_0: trend stationary; 
-  row.names(df_multi) <- c()
+function_stationary_tests <- function(df_input, n_lag = 2){
+  
+  df <- df_input %>% 
+    select(-contains("DATE_QUARTER"))                                      # deselect date column
+  
+  df_multi <- tibble(.rows = ncol(df)) %>%                                 # create tibble with number of rows being equal to the number of columns in dataframe input
+    mutate(VARIABLE = colnames(df)) %>%                                    # create string column with column names as input
+    mutate(SERIES = map(df, ~ (c(t(.))))) %>%                              # create column with nested time series of respective variable
+    
+    # conduct the stationary tests and create column with respective results
+    mutate(ADF_MODEL_NONE = map(SERIES, function(v) ur.df(ts(v[!is.na(v)]), type = "none", lags = n_lag)),
+           ADF_MODEL_DRIFT = map(SERIES, function(v) ur.df(ts(v[!is.na(v)]), type = "drift", lags = n_lag)),
+           ADF_MODEL_TREND1 = map(SERIES, function(v) ur.df(ts(v[!is.na(v)]), type = "trend", lags = n_lag)),
+           ADF_MODEL_TREND2 = map(SERIES, function(v) adf.test(ts(v[!is.na(v)]), alternative = "stationary", k = n_lag)),
+           KPSS_MODEL = map(SERIES, function(v) kpss.test(ts(v[!is.na(v)]), null = "Level", lshort = TRUE))
+    ) %>% 
+   
+    # extract p-values from the stationarity tests
+    mutate(ADF_MODEL_NONE_PVALUE = map(ADF_MODEL_NONE,
+                                       ~ { if((.@testreg$coefficients["z.lag.1","t value"] < .@cval["tau1","10pct"])&
+                                              (.@testreg$coefficients["z.lag.1","t value"] > .@cval["tau1","5pct"])) {"<0.1"} 
+                                         else if ((.@testreg$coefficients["z.lag.1","t value"] < .@cval["tau1","5pct"])&
+                                                  (.@testreg$coefficients["z.lag.1","t value"] > .@cval["tau1","1pct"]))  {"<0.05"}
+                                         else if ((.@testreg$coefficients["z.lag.1","t value"] < .@cval["tau1","1pct"]))  {"<0.01"}
+                                         else {">0.1"}}),
+           ADF_MODEL_DRIFT_PVALUE = map(ADF_MODEL_DRIFT,
+                                        ~ { if((.@testreg$coefficients["z.lag.1","t value"] < .@cval["tau2","10pct"])&
+                                               (.@testreg$coefficients["z.lag.1","t value"] > .@cval["tau2","5pct"])) {"<0.1"} 
+                                          else if ((.@testreg$coefficients["z.lag.1","t value"] < .@cval["tau2","5pct"])&
+                                                   (.@testreg$coefficients["z.lag.1","t value"] > .@cval["tau2","1pct"]))  {"<0.05"}
+                                          else if ((.@testreg$coefficients["z.lag.1","t value"] < .@cval["tau2","1pct"]))  {"<0.01"}
+                                          else {">0.1"}}),
+           ADF_MODEL_TREND1_PVALUE = map(ADF_MODEL_TREND1,
+                                         ~ { if((.@testreg$coefficients["z.lag.1","t value"] < .@cval["tau3","10pct"])&
+                                                (.@testreg$coefficients["z.lag.1","t value"] > .@cval["tau3","5pct"])) {"<0.1"} 
+                                           else if ((.@testreg$coefficients["z.lag.1","t value"] < .@cval["tau3","5pct"])&
+                                                    (.@testreg$coefficients["z.lag.1","t value"] > .@cval["tau3","1pct"]))  {"<0.05"}
+                                           else if ((.@testreg$coefficients["z.lag.1","t value"] < .@cval["tau3","1pct"]))  {"<0.01"}
+                                           else {">0.1"}}),
+           ADF_MODEL_TREND2_PVALUE = map(ADF_MODEL_TREND2, ~ .$p.value),
+           KPSS_MODEL_PVALUE = map(KPSS_MODEL, ~ .$p.value),
+    
+           # check if ur.df(type = "trend") and adf.test() yield the same results (based on package description they should do so)
+           TREND_CHECK = map(ADF_MODEL_TREND2_PVALUE,
+                             ~ { if((. < 0.1)&
+                                    (. > 0.05)) {"<0.1"} 
+                               else if ((. < 0.05)&
+                                        (. > 0.01))  {"<0.05"}
+                               else if (. <= 0.01)  {"<0.01"}
+                               else {">0.1"}})) %>% 
+    # unnest p-values
+    unnest(ADF_MODEL_NONE_PVALUE,
+           ADF_MODEL_DRIFT_PVALUE,
+           ADF_MODEL_TREND1_PVALUE,
+           ADF_MODEL_TREND2_PVALUE,
+           KPSS_MODEL_PVALUE) %>% 
+    # create a stationarity flag
+    mutate(ADF_NONE = ifelse(ADF_MODEL_NONE_PVALUE %in% c("<0.1", ">0.1"), "non-stationary", "stationary"),
+           ADF_DRIFT = ifelse(ADF_MODEL_DRIFT_PVALUE %in% c("<0.1", ">0.1"), "non-stationary", "stationary"),
+           ADF_TREND1 = ifelse(ADF_MODEL_TREND1_PVALUE %in% c("<0.1", ">0.1"), "non-stationary", "stationary"),
+           ADF_TREND2 = ifelse(ADF_MODEL_TREND2_PVALUE > 0.05, "non-stationary", "stationary"),
+           KPSS = ifelse(KPSS_MODEL_PVALUE < 0.05, "non-stationary", "stationary"))
+  
+  
+                         
+                         # Note that for the Dickey Fuller Test the model is reformulated as follows:
+                         # Y_t = b_0 + b_1*Y_t-1 + u_t =>
+                         # d Y_t = b_0 + (b_1 - 1)*Y_t-1 + u_t
+                         # H_0: b_1 - 1 = 0
+                         # if coefficient of Y_t-1 is significantly different from 0 (rejecting H_0), the series has no unit root (stationary).
+                         # if coefficient of Y_t-1 is not significantly different from 0 (not rejecting H_0), the series has a unit root (non stationary)
+                          
+                         # Including more lags in the model the augmented Dickey Fuller Test looks as follows:
+                         # Y_t = b_0 + b_1*Y_t-1 + b_2*Y_t-2 + u_t =>
+                         # d Y_t = b_0 + (b_1 + b_2 - 1)*Y_t-1 - b_2*d Y_t-1 + u_t
+                         # if coefficient of Y_t-1 is significantly different from 0 (rejecting H_0), the series has no unit root (stationary).
+                         # if coefficient of Y_t-1 is not significantly different from 0 (not rejecting H_0), the series has a unit root (non stationary)                         
+                         
+                         # Y_t = b_0 + b_1*Y_t-1 + gamma*t + u_t =>
+                         # d Y_t = b_0 + (b_1 - 1)*Y_t-1 + gamma*t + u_t
+                         # H_0: b_1 - 1 = 0
+                         # The null hypothesis is the same but the testing regression is different (now including time trend)
+                         # if coefficient of Y_t-1 is significantly different from 0 (rejecting H_0), the series has no unit root (trend stationary).
+                         # if coefficient of Y_t-1 is not significantly different from 0 (not rejecting H_0), the series has a unit root (non stationary)
+                         
+
+  
+
+
   return(df_multi)
 }
+
+

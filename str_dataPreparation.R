@@ -150,16 +150,23 @@ tidy_yx_yq %>%
 # Imputation of consumer sentiment UMCSEN_TX
 for (i in 1:nrow(tidy_yx_yq)){
   
-  if((is.na(tidy_yx_yq$UMCSEN_TX[i]) & i!=1)) tidy_yx_yq$UMCSEN_TX[i] <- mean(tidy_yx_yq$UMCSEN_TX[i-1]:tidy_yx_yq$UMCSEN_TX[i+1])
+  if((is.na(tidy_yx_yq$UMCSEN_TX[i]) & i!=1)){                              # imputation by the mean of preceding and succeeding observation
+    tidy_yx_yq$UMCSEN_TX[i] <- mean(tidy_yx_yq$UMCSEN_TX[i-1]:tidy_yx_yq$UMCSEN_TX[i+1])
+  } 
   
 }
 
 
 ## Stationary data ========================================================
+### Stationarity preparation ##############################################
 # Adjustemnts of transformation recommendations
 # AWHMAN: Average Weekly Hours of Production and Nonsupervisory Employees: Manufacturing
 trans_info_yq <- trans_info_yq %>% 
-  mutate(AWHMAN = 2)
+  mutate(TLBSNNCBBDIx = 2,                                                # Nonfinancial Corporate Business Sector Liabilities to Disposable Business Income (Percent)
+         TLBSNNBBDIx = 2,                                                 # Nonfinancial Noncorporate Business Sector Liabilities to Disposable Business Income (Percent)
+         #AWHMAN = 2,
+         NWPIx = 5)                                                       # Households and nonprofit organizations; net worth as a percentage of disposable personal income, Level
+
 
 
 tidy_yx_yq_stat <- tidy_yx_yq %>% 
@@ -172,61 +179,184 @@ tidy_yx_yq_stat <- tidy_yx_yq %>%
               select(c(DATE_QUARTER,NOMINAL_GDP, REAL_GDP, 
                        REAL_GDP_GROWTH, REAL_GDP_GROWTH_A, 
                        GDPC1, GDPC1_GROWTH, GDPC1_GROWTH_ANNUALIZED)), 
-            by = c("DATE_QUARTER")) %>%                                    # join gdp data by DATE_QUARTER
+            by = c("DATE_QUARTER")) %>%                                    # rejoin gdp data by DATE_QUARTER
   mutate(DATE_QUARTER = yearquarter(as.yearqtr(DATE_QUARTER, 
                                                "%m/%d/%Y"))) %>%           # define DATE_QUARTER as qtr type again since the join command does not preserve the data type
   select(DATE_QUARTER, NOMINAL_GDP, REAL_GDP, 
          REAL_GDP_GROWTH, REAL_GDP_GROWTH_A,
          GDPC1, GDPC1_GROWTH, GDPC1_GROWTH_ANNUALIZED, everything())
 
-### Stationarity preparation ##############################################
-
-
-# Variables detected as non-stationary by at least one of the tests
-variabels_nonstat <- function_stationary_tests(tidy_yx_yq_stat[,-1]) %>% 
-  as_tibble() %>% 
-  filter(KPSS == FALSE | ADF == FALSE) %>% 
-  select(VAR) %>% 
-  mutate(VAR = as.character(VAR)) %>% 
-  as_vector() %>% 
-  str_c()
-
-# Variables detected as non-stationary by both tests
-variabels_nonstat2 <- function_stationary_tests(tidy_yx_yq_stat[,-1]) %>% 
-  as_tibble() %>% 
-  filter(KPSS == FALSE & ADF == FALSE) %>% 
-  select(VAR) %>% 
-  mutate(VAR = as.character(VAR)) %>% 
-  as_vector() %>% 
-  str_c()
-
-# Return maximum value of the respective time series
-# tidy_yx_yq_stat %>% 
-#   select(variabels_nonstat) %>% 
-#   summarise_all(max, na.rm = TRUE) %>% 
-#   select(-c("TLBSNNBBD_IX", "GFDEBT_NX", "HW_IX", "NWP_IX")) %>% 
-#   select(-c("TCU", "CUMFNS", "REVOLS_LX", "UMCSEN_TX", "DRIWCIL", "IMFS_LX", "TLBSNNC_BX", "AWHMAN")) %>% 
-#   t
-
 
 ### Check non-stationary variables ########################################
-# Visual inspection of variables which have been detected as non-stationary by one of the tests
+stationarity_testing <- function_stationary_tests(tidy_yx_yq_stat)         # create tibble with detailed stationarity results
+
+
+stationarity_testing_short <- stationarity_testing %>% 
+  filter(!(VARIABLE %in% c("NOMINAL_GDP", "REAL_GDP", "GDPC1"))) %>%       # deselect level variables
+  select(VARIABLE, ADF_NONE, ADF_DRIFT, ADF_TREND1, ADF_TREND2, KPSS) %>%  # select only variable name and stationarity classifier
+  replace(.=="stationary", 0) %>%                                          # make classifier numeric: stationary = 0, non-stationary = 1
+  replace(.=="non-stationary", 1) %>%                                      
+  mutate_at(.vars = c("ADF_NONE", "ADF_DRIFT", "ADF_TREND1", "ADF_TREND2", "KPSS"), 
+            .funs = function(x) as.numeric(x)) %>%                         # change variable type to numeric 
+  mutate(NONSTATIONARY_CLASS = rowSums(x = .[,-1]))                        # calculate how many of the classifiers indicate non-stationarity
+
+  
+
+
+# Inspection of variables which have been detected as non-stationary by all of the tests
+nonstat_5 <- stationarity_testing_short %>% 
+  filter(NONSTATIONARY_CLASS == 5) %>% 
+  select(VARIABLE) %>% 
+  as_vector() %>% 
+  paste()
+
+
 tidy_yx_yq_stat %>% 
-  select(DATE_QUARTER, variabels_nonstat) %>% 
-  select(-variabels_nonstat2) %>% 
-  #select(-c("TLBSNNBBD_IX")) %>%
-  select(-c("GFDEBT_NX")) %>%
+  select(DATE_QUARTER, nonstat_5) %>% 
   melt(id.vars = "DATE_QUARTER", variable.name = "ESTIMATES") %>% 
   as_tibble() %>% 
   ggplot() +
   geom_line(aes(x = DATE_QUARTER, y = value, color = ESTIMATES), alpha = 0.5) +
+  facet_wrap("ESTIMATES", scales = "free") +
   scale_color_viridis(discrete = TRUE) +
   theme_thesis +
   theme(legend.position = "none")
 
+# Comments:
+# - HW_IX: Help-Wanted Advertising in Newspapers for United States (tcode: 1)
+#          Clearly the time series is non-stationary. However, while online only data is available up to 1966, the series in FRED-QD publishes 
+#          values up to today without clear reference where the values come from
+#          -> drop
+# - NWP_IX: Households and nonprofit organizations; net worth as a percentage of disposable personal income, Level (tcode: 1)
+#           Clearly non-stationary. Transformation: 5 instead of 1
+#           -> keep 
+
+
+
+# Inspection of variables which have been detected as non-stationary by 4 of the tests
+nonstat_4 <- stationarity_testing_short %>% 
+  filter(NONSTATIONARY_CLASS == 4) %>% 
+  select(VARIABLE) %>% 
+  as_vector() %>% 
+  paste()
+# there are none
+
+
+# Inspection of variables which have been detected as non-stationary by 3 of the tests
+nonstat_3 <- stationarity_testing_short %>% 
+  filter(NONSTATIONARY_CLASS == 3) %>% 
+  select(VARIABLE) %>% 
+  as_vector() %>% 
+  paste()
+# there are none
+
+
+tidy_yx_yq_stat %>% 
+  select(DATE_QUARTER, nonstat_3) %>% 
+  melt(id.vars = "DATE_QUARTER", variable.name = "ESTIMATES") %>% 
+  as_tibble() %>% 
+  ggplot() +
+  geom_line(aes(x = DATE_QUARTER, y = value, color = ESTIMATES), alpha = 0.5) +
+  facet_wrap("ESTIMATES", scales = "free") +
+  scale_color_viridis(discrete = TRUE) +
+  theme_thesis +
+  theme(legend.position = "none")
+
+# Comments:
+# - DRIWCIL: FRB Senior Loans Officer Opions. Net Percentage of Domestic Respondents Reporting Increased Willingness to Make Consumer Installment Loans (tcode: 1)
+#            Data only available from 1982 on. 
+#            -> drop
+# - SPCS10RSA: S&P/Case-Shiller 10-City Composite Home Price Index (Index January 2000 = 100) (tcode: 5)
+#              Data only available from 1982 on.
+#              -> drop 
+# - SPCS20RSA: S&P/Case-Shiller 10-City Composite Home Price Index (Index January 2000 = 100) (tcode: 5)
+#              Data only available from beginning of 2000s on.
+#              -> drop 
+# - UMCSEN_TX: University of Michigan: Consumer Sentiment (Index 1st Quarter 1966=100) (tcode: 1)
+#              Looks stationary (at least no trend). KPSS suggests stationarity. No changes
+#              -> keep
+# - TLBSNNCBBD_IX: Nonfinancial Corporate Business Sector Liabilities to Disposable Business Income (Percent) (tcode: 1)
+#                  Looks slightly trending. KPSS suggests non-stationary. Transformation: 2 instead of 1
+#                  -> keep
+# - TLBSNNBBD_IX: Nonfinancial Noncorporate Business Sector Liabilities to Disposable Business Income (Percent)
+#                 Looks slightly trending. KPSS suggests non-stationary. Transformation: 2 instead of 1
+#                 -> keep
+
+
+
+# Inspection of variables which have been detected as non-stationary by 3 of the tests
+nonstat_2 <- stationarity_testing_short %>% 
+  filter(NONSTATIONARY_CLASS == 2) %>% 
+  select(VARIABLE) %>% 
+  as_vector() %>% 
+  paste()
+# there are none
+
+
+tidy_yx_yq_stat %>% 
+  select(DATE_QUARTER, nonstat_2) %>% 
+  melt(id.vars = "DATE_QUARTER", variable.name = "ESTIMATES") %>% 
+  as_tibble() %>% 
+  ggplot() +
+  geom_line(aes(x = DATE_QUARTER, y = value, color = ESTIMATES), alpha = 0.5) +
+  facet_wrap("ESTIMATES", scales = "free") +
+  scale_color_viridis(discrete = TRUE) +
+  theme_thesis +
+  theme(legend.position = "none")
+
+
+# Comments:
+# - TCU: Capacity Utilization: Total Industry (Percent of Capacity) (tcode: 1)
+#        Data series starts later. 
+#        -> drop
+# - AHETPIx: Real Average Hourly Earnings of Production and Nonsupervisory Employees: Total Private (2012 Dollars per Hour), deflated by Core PCE (tcode: 5)
+#            Data series starts later. 
+#            -> drop 
+# - SPCS20RSA: All-Transactions House Price Index for the United States (Index 1980 Q1=100) (tcode: 5)
+#              Data series starts later. 
+#              -> drop 
+
+
+
+
+# Define no change variables
+nochange_variables <- c("UMCSEN_TX",
+                        "")
+
+
 # Define dropping variables
-variables_drop1 <- c("TLBSNNBBD_IX",                                       # trending and variance non-stationary
-                       "GFDEBT_NX")                                        # trending
+drop_variables <- c("HW_IX",                                               # drop because of unclear data availability
+                    "DRIWCIL",
+                    "SPCS10RSA",
+                    "SPCS20RSA",
+                    "TCU",
+                    "AHETP_IX",
+                    "USSTHPI")
+
+
+
+
+
+
+
+
+
+
+
+
+# -------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Visual inspection of variables which have been detected as non-stationary by both tests
 tidy_yx_yq_stat %>% 

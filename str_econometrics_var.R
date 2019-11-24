@@ -8,18 +8,23 @@ training_end <- "2007 Q1"         # Set the last quarter of training data, the s
 
 
 # VAR
-VAR_variables <- c("REAL_GDP_GROWTH",
-                   "HOUST",
-                   "AMDMN_OX",
-                   "S_P_500",
-                   "UMCSEN_TX",
-                   "AWHMAN",
-                   "CPF3MTB3MX")
+VAR_variables <- c("REAL_GDP_GROWTH", 
+                   "HOUST",           # Housing Starts: Total: New Privately Owned Housing Units Started (Thousands of Units)
+                   "AMDMN_OX",        # Real Manufacturers' New Orders: Durable Goods (Millions of 2012 Dollars), deflated by Core PCE
+                   "S_P_500",         # S&P's Common Stock Price Index: Composite
+                   "UMCSEN_TX",       # University of Michigan: Consumer Sentiment (Index 1st Quarter 1966=100)
+                   "AWHMAN",          # Average Weekly Hours of Production and Nonsupervisory Employees: Manufacturing (Hours)
+                   "T5YFFM")          # 5-year treasury constant maturity rate and federal funds rate
+
+# VAR_variables <- c("CPIAUCSL",
+#                    "FEDFUNDS",
+#                    "REAL_GDP_GROWTH")
+
 ic <- "bic"                       # select information criteria used for order selection ("aic", "bic" or "aicc")
 max_p <- 10                       # select maximum number of AR terms 
 lag_max <- 10                     # maximum number of lags considered in ACF plots
 
-final_p <- c(0)                   # define AR parameters of final model (integer is here possibly enough, the one needs to redefine code below: no more length(final_p))
+final_p <- 1                      # define AR parameters of final model
 
                 
 
@@ -29,13 +34,13 @@ source(file = file.path(getwd(), "Code", "src_setup.R"))
 
 # Read data ---------------------------------------------------------------
 load(file = file.path(getwd(), "Results", "tidy_data", "tidy_yx_yq_stat.RData"))
-
+load(file = file.path(getwd(), "Results", "tidy_data", "tidy_yx_yq.RData"))
 
 
 # Filter data -------------------------------------------------------------
 
-# Select target variable gdp growth
-tidy_y_yq_stat <- tidy_yx_yq_stat %>% 
+# Select target variable gdp growth and further variables considered in the VAR model
+tidy_yx_yq_stat <- tidy_yx_yq_stat %>% 
   select(DATE_QUARTER, VAR_variables)
 
 
@@ -44,7 +49,7 @@ training_end <- training_end %>%
   yearquarter()
 
 # Training data
-data_training <- tidy_y_yq_stat %>% 
+data_training <- tidy_yx_yq_stat %>% 
   as_tsibble(index = DATE_QUARTER) %>% 
   filter_index(~training_end) %>% 
   as_tibble()
@@ -68,7 +73,7 @@ tidy_yx_yq %>%
   as_tibble() %>% 
   ggplot() +
   geom_line(aes(x = DATE_QUARTER, y = value, color = SERIES, linetype = SERIES)) +
-  scale_color_manual(values = function_gradient_blue(7)) +
+  scale_color_viridis(discrete = TRUE) +
   scale_y_log10()+
   theme_thesis 
 
@@ -80,7 +85,7 @@ tidy_yx_yq_stat %>%
   as_tibble() %>% 
   ggplot() +
   geom_line(aes(x = DATE_QUARTER, y = value, color = SERIES, linetype = SERIES)) +
-  scale_color_manual(values = function_gradient_blue(7)) +
+  scale_color_viridis(discrete = TRUE) +
   theme_thesis 
 
 
@@ -96,7 +101,7 @@ data_training %>%
 
 model_VAR <- data_training %>% 
   select(VAR_variables) %>% 
-  VAR(p = length(final_p), type = "const")
+  VAR(p = final_p, type = "const")
 
 summary(model_VAR$varresult$REAL_GDP_GROWTH)
 
@@ -106,21 +111,116 @@ summary(model_VAR$varresult$REAL_GDP_GROWTH)
 #   ts(start = c(lubridate::year(.$DATE_QUARTER[1]), lubridate::quarter(.$DATE_QUARTER[1])),
 #      end = c(lubridate::year(.$DATE_QUARTER[nrow(.)]), lubridate::quarter(.$DATE_QUARTER[nrow(.)])),
 #      frequency = 4) %>% 
-#   dynlm(formula = REAL_GDP_GROWTH ~ L(REAL_GDP_GROWTH, 1:length(final_p)) + L(HOUST, 1:length(final_p)) +
-#           L(AMDMN_OX, 1:length(final_p)) + L(S_P_500, 1:length(final_p)) + 
-#           L(UMCSEN_TX, 1:length(final_p)) + L(AWHMAN, 1:length(final_p)) +
-#           L(CPF3MTB3MX, 1:length(final_p))) 
+#   dynlm(formula = REAL_GDP_GROWTH ~ L(REAL_GDP_GROWTH, 1:final_p) + L(HOUST, 1:final_p) +
+#           L(AMDMN_OX, 1:final_p) + L(S_P_500, 1:final_p) + 
+#           L(UMCSEN_TX, 1:final_p) + L(AWHMAN, 1:final_p) +
+#           L(CPF3MTB3MX, 1:final_p)) 
 # summary(model_ADL)
 
 
 
-# Continue here:
+# Analysis residuals ------------------------------------------------------
+## Complete VAR model =====================================================
+# Define residuals tibbel
+residual <- model_VAR %>% 
+  residuals() %>%                                                          # extract residuals from model
+  as_tibble() %>% 
+  bind_cols(data_training %>%                                              # bind the respective date to the residuals (required for time series plot of residuals)
+              select(DATE_QUARTER) %>% 
+              filter(!(row.names(.) %in% 1:final_p))) %>%                  # drop the residuals which are meaningless (=0) according to the number of AR components in the model   
+  select(DATE_QUARTER, everything())
+
+# Residual ACF (compress plots into one figure here)
+for (v in VAR_variables){
+    print(residual %>% 
+    select(v) %>% 
+    ggAcf(main = "", lag.max = lag_max) +                                     # plot empirical ACF
+    theme_thesis)
+  
+}
+
+
+
+# Multivate Portmanteau tests to test for serial correlation 
+serial.test(model_VAR, 
+            lags.pt = 40,
+            lags.bg = 50,
+            type = "PT.asymptotic")
+
+
+BoxPierce(model_VAR, lags = seq(10,50,5)) %>%                              # identical to serial.test above
+  as_tibble()
+LjungBox(model_VAR, lags = seq(10,40,5))
+
+# Additional Test
+Hosking(model_VAR, lags = seq(10,40,5))
+
+
+## GDP from VAR model =====================================================
+# Define GDP residuals tibbel
+residual <- residual %>% 
+  select(DATE_QUARTER, REAL_GDP_GROWTH) %>% 
+  rename(RESIDUALS = REAL_GDP_GROWTH) 
+
+
+# Residual ACF
+residual %>% 
+  select(RESIDUALS) %>%                                                     # select residuals
+  ggAcf(main = "", lag.max = lag_max) +                                     # plot empirical ACF
+  theme_thesis
+
+# Residual time series
+residual %>% 
+  ggplot() +
+  geom_line(aes(x = DATE_QUARTER, y = RESIDUALS)) +
+  theme_thesis +
+  xlab("Date") +
+  ylab("Residuals")
+
+# Residual distribution
+residual %>% 
+  ggplot(aes(x = RESIDUALS)) +
+  geom_histogram(aes(y = ..density..), fill = bb_blue_medium, color = "white") +
+  geom_density() +
+  theme_thesis +
+  xlab("Residuals") +
+  ylab("Density")
+
+
+# Ljung-Box Test
+residual %>% 
+  select(RESIDUALS) %>% 
+  Box.test(lag = 10,
+           type = "Ljung-Box",
+           fitdf = 0)  
+# cannot reject the H_0 that residuals are independent (White noise) as p > 0.01 or alternatively
+# cannot reject the H_0 that autocorrelation in residual series is not statistically different from a zero set
+
+residual %>% 
+  select(RESIDUALS) %>% 
+  Box.test(lag = 10,
+           type = "Box-Pierce",
+           fitdf = 0)  
+# cannot reject the H_0 that residuals are independent (White noise) as p > 0.01 or alternatively 
+# cannot reject the H_0 that autocorrelation in residual series is not statistically different from a zero set
+
+
+
+
 # Granger causality -------------------------------------------------------
 # Tests whether independent variables granger cause dependent variable (REAL_GDP_GROWTH).
-# Basically this is a F-Test comparing explanatory power of an unrestricted model with all variables and the smaller model
-# without the independent variable whose "causality" should be tested.
-# Multivariate granger causality test
-granger_VAR <- data_training %>% 
+# Basically this is a F-Test comparing explanatory power of an unrestricted model with all variables (Y & X) and the smaller model
+# without the variable whose "causality" should be tested.
+# In its core the Granger causality test is a F-Test with H_0: R^2 of the unrestricted model including the lagged values 
+# of Y and X is equal to the R^2 of the smaller model with only lagged values of Y. The ratio of both R^2 builds the F-statistic.
+# For large values of the F-statitistic H_0 (no "granger causality") can be rejected.
+
+
+
+## Joint Granger causality ================================================
+
+# Joint granger causality test (causality of one variable on all other variables)
+granger_VAR_joint1 <- data_training %>% 
   select(VAR_variables) %>%
   colnames() %>% 
   enframe(name = NULL, value = "SERIES") %>% 
@@ -128,56 +228,54 @@ granger_VAR <- data_training %>%
          P_VALUE = map(GRANGER, ~ .$p.value[1,1])) %>% 
   unnest(P_VALUE)
 
-# dropping insignificant variables?
-granger_VAR$GRANGER
+granger_VAR_joint1
 
+
+# Joint granger causality test (causality of all variables on one variables)
+granger_VAR_joint2 <- data_training %>% 
+  select(VAR_variables) %>%
+  colnames() %>% 
+  enframe(name = NULL, value = "SERIES") %>% 
+  mutate(GRANGER = map(SERIES, function(x) causality(model_VAR, cause = VAR_variables[!(VAR_variables == x)], vcov. = vcovHC(model_VAR))$Granger),
+         P_VALUE = map(GRANGER, ~ .$p.value[1,1])) %>% 
+  unnest(P_VALUE)
+
+granger_VAR_joint2
+
+
+
+
+
+
+# Granger causality of all features on traget variable
 model_VAR %>% 
-  causality(cause = VAR_variables[2:length(VAR_variables)], vcov. = vcovHC(.)) %>% 
+  causality(cause = VAR_variables[!str_detect(string = VAR_variables, pattern = "REAL_GDP_GROWTH")], vcov. = vcovHC(.)) %>% 
   .$Granger
 
 
-# # Check (compare both results): 
-# temp <- data_VAR %>% 
-#   select(DATE_QUARTER, REAL_GDP_GROWTH, FEDFUNDS_STAT, UNRATE_STAT, CPIAUCSL_STAT) %>% 
-#   ts(start = c(year(.$DATE_QUARTER[1]), quarter(.$DATE_QUARTER[1])),
-#      end = c(year(.$DATE_QUARTER[nrow(.)]), quarter(.$DATE_QUARTER[nrow(.)])),
-#      frequency = 4) %>% 
-#   dynlm(formula = REAL_GDP_GROWTH ~ L(REAL_GDP_GROWTH, 1:2) + L(FEDFUNDS_STAT, 1:2))
-# 
-# 
-# temp %>% 
-#   linearHypothesis(c("L(FEDFUNDS_STAT, 1:2)1 = 0", "L(FEDFUNDS_STAT, 1:2)2 = 0")) 
-# 
-# grangertest(data_VAR$FEDFUNDS_STAT, y = data_VAR$REAL_GDP_GROWTH, order = 2)
-#
-# # Granger causality compares both models and tests whether increase 
-# # in explanatory power of extended model is statistically significant
-# # based of F-statistic
+## Individual Granger causality ===========================================
 
-# "Univariate" granger causality test
-test_granger <- vector(mode = "list", length = length(VAR_variables))
-for (i in 1:length(test_granger)){
-  test_granger[[i]]$EXCLUDED_VARIABLES <- names(model_ADL$coefficients)[(2*i):(2*i+1)] 
-  
-  test_granger[[i]]$P_VALUE <- linearHypothesis(model_ADL, 
-                                                hypothesis.matrix = paste(names(model_ADL$coefficients)[(2*i):(2*i+1)], "= 0"),
-                                                vcov. = vcovHC(model_ADL))$`Pr(>F)`[2]
-  
-  
-}
-test_granger
+ 
+# Test whether the inclusion of the respective variable improves
+# the minimal model with only lagged values of the target (AR model)
+granger_VAR_ind <- tibble(.rows = ncol(data_training)) %>%                 # create tibble with number of rows being equal to the number of columns in dataframe input
+  mutate(VARIABLE = colnames(data_training)) %>%                           # create string column with column names as input
+  mutate(SERIES = map(data_training, ~ (c(t(.))))) %>%                     # create column with nested time series of respective variable
+  filter(VARIABLE != "DATE_QUARTER") %>% 
+  filter(VARIABLE != "REAL_GDP_GROWTH") %>% 
+  mutate(GRANGER = map(SERIES, function(v) grangertest(x = data_training$REAL_GDP_GROWTH, y = v, order = final_p)),
+         P_VALUE = map(GRANGER, ~ .$`Pr(>F)`[2])
+         ) %>% 
+  unnest(P_VALUE)
+
+granger_VAR_ind
 
 
-# Cointegration test ------------------------------------------------------
-# Johansen test
-data_training %>% 
-  select(VAR_variables) %>%
-  ca.jo(type = "trace", ecdet = "none", K = 2, spec = "longrun") %>% 
-  summary()
-# Test suggest that there are 3 cointegarted vectors (test statistic of r<=3 is greater than critical value at 1pct (36.08 > 11.65))
-# At this stage H_0 is that there are 2 or less cointegrating vectors which by the above result can be rejected.
-# However, since we are interested in modelling percentage change time series (which are all stationary) and not level time series
-# which are I(1), it is sufficient to choose a VAR model instead a VECM model (further reading possibly required, e.g. Hamilton).
+# Test whether the inclusion of the respective variable improves
+# the full model including all variables
+function_granger_stepwise(df = data_training, lags = final_p)
+
+
 
 
 # Forecasting -------------------------------------------------------------
@@ -266,4 +364,16 @@ data_VAR %>%
   select(SERIES, P_VALUE) %>% 
   unnest()
 # cannot reject the H_0 for all variables which enter into VAR model that process is stationary due to time trend
+
+
+## Cointegration test =====================================================
+# Johansen test
+data_training %>% 
+  select(VAR_variables) %>%
+  ca.jo(type = "trace", ecdet = "none", K = 2, spec = "longrun") %>% 
+  summary()
+# Test suggest that there are 3 cointegarted vectors (test statistic of r<=3 is greater than critical value at 1pct (36.08 > 11.65))
+# At this stage H_0 is that there are 2 or less cointegrating vectors which by the above result can be rejected.
+# However, since we are interested in modelling percentage change time series (which are all stationary) and not level time series
+# which are I(1), it is sufficient to choose a VAR model instead a VECM model (further reading possibly required, e.g. Hamilton).
 

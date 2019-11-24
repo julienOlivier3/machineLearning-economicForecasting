@@ -157,7 +157,7 @@ residual <- model_AR %>%
 # Residual ACF
 residual %>% 
   select(RESIDUALS) %>%                                                     # select residuals
-  ggAcf(main = "", lag.max = 30) +                                          # plot empirical ACF
+  ggAcf(main = "", lag.max = lag_max) +                                     # plot empirical ACF
   theme_thesis
 
 # Residual time series

@@ -82,8 +82,11 @@ tidy_y_yq_stat <- tidy_yx_yq_stat %>%
 
 # Create tsibble with independent variables and only keep lags, i.e. drop contemporaneous events (forecasting!)
 tidy_x_yq_stat <- tidy_yx_yq_stat %>%  
-  select(-c(REAL_GDP_GROWTH,                                               # drop all GDP figures
-            REAL_GDP_GROWTH_A, 
+  select(-c(NOMINAL_GDP,                                                   # drop all GDP figures
+            REAL_GDP,
+            REAL_GDP_GROWTH,                                               
+            REAL_GDP_GROWTH_A,
+            GDPC1,
             GDPC1_GROWTH, 
             GDPC1_GROWTH_ANNUALIZED)) %>% 
   { if(selective)                                                          # compromise feature space if selective = TRUE

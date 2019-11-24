@@ -12,8 +12,15 @@ forecasting_intervals <- 95       # Set forecasting confidence intervals
                                   # forecasting_periods = 10 forecasts 10 periods ahead with
                                   # only based on training data training_start ~ training_end.
                                   # It does not extend the training sample iteratively.)
+
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 # ARIMA
 ARIMA_order <- c(2, 0, 0)
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 
 # VAR
 # Keynesian structural VAR
@@ -29,9 +36,17 @@ VAR_variables <- c("REAL_GDP_GROWTH",
                    "S_P_500",
                    "UMCSEN_TX",
                    "AWHMAN",
-                   "CPF3MTB3MX")
+                   "T5YFFM")
 
 VAR_order <- 2
+
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# FAVAR
+FAVAR_order <- 3
+FAVAR_factor_n <- 1
+
 
 #--------------------------------------------------------------------------
 # Sourcing ----------------------------------------------------------------
@@ -45,6 +60,15 @@ load(file = file.path(getwd(), "Results", "tidy_data", "tidy_yx_yq_stat.RData"))
 
 
 # Filter data -------------------------------------------------------------
+# Drop GDP related data other than the target
+tidy_yx_yq_stat <- tidy_yx_yq_stat %>% 
+  select(-c(NOMINAL_GDP,                                                   # drop all GDP figures except target variable
+            REAL_GDP,
+            REAL_GDP_GROWTH_A,
+            GDPC1,
+            GDPC1_GROWTH, 
+            GDPC1_GROWTH_ANNUALIZED))
+
 # Change data type of last observation of training data
 training_end <- training_end %>% 
   yearquarter() - (forecasting_periods-1)
@@ -82,6 +106,7 @@ trainings <- as.numeric(testing_end - training_end)#/forecasting_periods
 RW_temp <- list()
 ARIMA_temp <- list()
 VAR_temp <- list()
+FAVAR_temp <- list()
 
 for (i in 1:trainings){
 
@@ -199,16 +224,64 @@ VAR_temp[[i]] <- tidy_yx_yq_stat %>%
          UPPER = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$upper[1:forecasting_periods])) %>% 
   select(TRAINING_END, everything())
 
+
+
+
+## FAVAR ==================================================================
+FAVAR_temp[[i]] <- tidy_yx_yq_stat %>% 
+  nest(.key = DATA) %>% 
+  mutate(MODEL_ID = "FAVAR",
+         FEATURE_SPACE = map(DATA, ~ select(., -contains("REAL_GDP_GROWTH")) %>%  
+                                     as_tibble() %>% 
+                                     select(-"DATE_QUARTER")),
+         PCA = map(FEATURE_SPACE, ~ prcomp(.,
+                                           center = TRUE,  
+                                           scale. = TRUE, 
+                                           rank. = FAVAR_factor_n)),
+         PCA_SCORE = map(PCA, ~ .$x %>% 
+                                as_tibble()),
+         TRAINING_DATA = map(DATA, ~ select(., -c(colnames(FEATURE_SPACE[[1]]))) %>%                                  # drop all variables which have been considered for PCA
+                               bind_cols(PCA_SCORE) %>% 
+                               filter_index(~ training_end + (i-1)) %>% 
+                               as_tibble()),
+         TRAINING_END = training_end + (i-1),
+         MODEL = map(TRAINING_DATA, 
+                     ~ as.ts(.) %>% 
+                       VAR(., p = FAVAR_order, 
+                           type = "const")),
+         FORECAST_OBJECT = map(MODEL, 
+                               ~ forecast(., h = forecasting_periods, 
+                                          level = forecasting_intervals)),
+         FORECAST_PERIOD = map(DATA, ~ yearquarter(seq(as.Date(testing_start), 
+                                                       as.Date(last_forecast), 
+                                                       by = "quarter"))),
+         PERIODS_AHEAD = map(., ~ 1:forecasting_periods),
+         TRUE_VALUE = map(DATA, ~ select(.,DATE_QUARTER, REAL_GDP_GROWTH) %>%  # extract the realized GDP growth in that period
+                            filter_index(testing_start ~ last_forecast) %>% 
+                            as_tibble(.) %>% 
+                            select(.,REAL_GDP_GROWTH) %>% 
+                            { if(nrow(.) == forecasting_periods) . else add_row(., REAL_GDP_GROWTH=rep(NA, forecasting_periods-nrow(.))) } %>%        
+                            # if forecast is in the future (i.e. there is no actual realization yet), fill with NA
+                            unlist()),
+         MEAN = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$mean[1:forecasting_periods]),
+         LOWER = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$lower[1:forecasting_periods]),
+         UPPER = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$upper[1:forecasting_periods])) %>% 
+  select(TRAINING_END, everything())
+
 }
 
+
 # Bind list elements rowwise
+RW_model <- RW_temp %>%
+  bind_rows() %>% 
+  mutate(TRAINING_END = yearquarter(TRAINING_END))
 ARIMA_model <- ARIMA_temp %>%
   bind_rows() %>% 
   mutate(TRAINING_END = yearquarter(TRAINING_END))
 VAR_model <- VAR_temp %>%
   bind_rows() %>% 
   mutate(TRAINING_END = yearquarter(TRAINING_END))
-RW_model <- RW_temp %>%
+FAVAR_model <- FAVAR_temp %>% 
   bind_rows() %>% 
   mutate(TRAINING_END = yearquarter(TRAINING_END))
 
@@ -226,6 +299,9 @@ rw_error <- RW_model %>%
 forecasting_models <- ARIMA_model %>% 
   bind_rows(VAR_model) %>% 
   bind_rows(RW_model) %>% 
+  bind_rows(FAVAR_model %>% select(-c(FEATURE_SPACE,
+                                   PCA,
+                                   PCA_SCORE))) %>% 
   select(MODEL_ID, TRAINING_END, PERIODS_AHEAD, FORECAST_PERIOD, 
          TRUE_VALUE, MEAN, LOWER, UPPER) %>% 
   as_tibble() %>% 

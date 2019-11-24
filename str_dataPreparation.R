@@ -156,15 +156,65 @@ for (i in 1:nrow(tidy_yx_yq)){
   
 }
 
+# Dropping of incomplete series (missings at beginning of series)
+incomplete_variables <- c("OUTMS",
+                          "TCU",
+                          "LNS13023621",
+                          "LNS13023557",
+                          "LNS13023705",
+                          "LNS13023569",
+                          "HOAMS",
+                          "AWHNONAG",
+                          "PERMIT",
+                          "ACOGN_OX",
+                          "ANDEN_OX",
+                          "INVCQRMTSPL",
+                          "WPU0531",
+                          "AHETP_IX", 
+                          "COMPRMS", 
+                          "OPHMFG", 
+                          "ULCMFG", 
+                          "MORTGAGE30US", 
+                          "MORTG10Y_RX", 
+                          "IMFS_LX", 
+                          "REVOLS_LX", 
+                          "DRIWCIL", 
+                          "VXOCL_SX", 
+                          "USSTHPI", 
+                          "SPCS10RSA", 
+                          "SPCS20RSA", 
+                          "TWEXMMTH", 
+                          "EXUSEU", 
+                          "USEPUINDXM", 
+                          "GFDEGDQ188S", 
+                          "GFDEBT_NX", 
+                          "PERMITNE", 
+                          "PERMITMW", 
+                          "PERMITS", 
+                          "PERMITW", 
+                          "NASDAQCOM", 
+                          "CUSR0000SEHC")
+
+tidy_yx_yq <- tidy_yx_yq %>% 
+  select(-incomplete_variables)
 
 ## Stationary data ========================================================
 ### Stationarity preparation ##############################################
 # Adjustemnts of transformation recommendations
-# AWHMAN: Average Weekly Hours of Production and Nonsupervisory Employees: Manufacturing
 trans_info_yq <- trans_info_yq %>% 
   mutate(TLBSNNCBBDIx = 2,                                                # Nonfinancial Corporate Business Sector Liabilities to Disposable Business Income (Percent)
          TLBSNNBBDIx = 2,                                                 # Nonfinancial Noncorporate Business Sector Liabilities to Disposable Business Income (Percent)
-         #AWHMAN = 2,
+         CUMFNS = 2,                                                      # Capacity Utilization: Manufacturing (SIC) (Percent of Capacity)
+         AWHMAN = 2,                                                      # Average Weekly Hours of Production and Nonsupervisory Employees: Manufacturing (Hours)
+         BAA10YM = 5,                                                     # Moody's Seasoned Baa Corporate Bond Yield Relative to Yield on 10-Year Treasury Constant Maturity (Percent)
+         GS10TB3MX = 2,                                                   # 10-Year Treasury Constant Maturity Minus 3-Month Treasury Bill, secondary market (Percent)
+         GS1TB3Mx = 2,                                                    # 1-Year Treasury Constant Maturity Minus 3-Month Treasury Bill, secondary market (Percent)
+         UMCSENTx = 5,                                                    # University of Michigan: Consumer Sentiment (Index 1st Quarter 1966=100)
+         COMPAPFF = 2,                                                    # 3-Month Commercial Paper Minus Federal Funds Rate
+         TB3SMFFM = 2,                                                    # 3-Month Treasury Constant Maturity Minus Federal Funds Rate
+         A014RE1Q156NBEA = 2,                                             #	Shares of gross domestic product: Gross private domestic investment: Change in private inventories (Percent)
+         CPF3MTB3Mx = 2,                                                  #	3-Month Commercial Paper Minus 3-Month Treasury Bill, secondary market (Percent)
+         AAAFFM	= 2,                                                      # Moody's x Aaa Corporate Bond Minus Federal Funds Rate
          NWPIx = 5)                                                       # Households and nonprofit organizations; net worth as a percentage of disposable personal income, Level
 
 
@@ -182,6 +232,7 @@ tidy_yx_yq_stat <- tidy_yx_yq %>%
             by = c("DATE_QUARTER")) %>%                                    # rejoin gdp data by DATE_QUARTER
   mutate(DATE_QUARTER = yearquarter(as.yearqtr(DATE_QUARTER, 
                                                "%m/%d/%Y"))) %>%           # define DATE_QUARTER as qtr type again since the join command does not preserve the data type
+  filter(!(row.names(.) %in% c(1, 2))) %>%                                 # drop first two rows which include missings due to differencing
   select(DATE_QUARTER, NOMINAL_GDP, REAL_GDP, 
          REAL_GDP_GROWTH, REAL_GDP_GROWTH_A,
          GDPC1, GDPC1_GROWTH, GDPC1_GROWTH_ANNUALIZED, everything())
@@ -189,20 +240,39 @@ tidy_yx_yq_stat <- tidy_yx_yq %>%
 
 ### Check non-stationary variables ########################################
 stationarity_testing <- function_stationary_tests(tidy_yx_yq_stat)         # create tibble with detailed stationarity results
+                                                  
 
 
 stationarity_testing_short <- stationarity_testing %>% 
   filter(!(VARIABLE %in% c("NOMINAL_GDP", "REAL_GDP", "GDPC1"))) %>%       # deselect level variables
-  select(VARIABLE, ADF_NONE, ADF_DRIFT, ADF_TREND1, ADF_TREND2, KPSS) %>%  # select only variable name and stationarity classifier
+  select(VARIABLE, ADF_NONE, ADF_DRIFT, ADF_TREND1,                        # select only variable name and stationarity classifier
+         ADF_TREND2, KPSS_LEVEL, KPSS_TREND) %>%                           
   replace(.=="stationary", 0) %>%                                          # make classifier numeric: stationary = 0, non-stationary = 1
   replace(.=="non-stationary", 1) %>%                                      
-  mutate_at(.vars = c("ADF_NONE", "ADF_DRIFT", "ADF_TREND1", "ADF_TREND2", "KPSS"), 
+  mutate_at(.vars = c("ADF_NONE", "ADF_DRIFT", "ADF_TREND1", 
+                      "ADF_TREND2", "KPSS_LEVEL", "KPSS_TREND"), 
             .funs = function(x) as.numeric(x)) %>%                         # change variable type to numeric 
-  mutate(NONSTATIONARY_CLASS = rowSums(x = .[,-1]))                        # calculate how many of the classifiers indicate non-stationarity
+  mutate(NONSTATIONARY_CLASS = rowSums(x = .[,-1]),                        # calculate how many of the classifiers indicate non-stationarity
+         NONSTATIONARY_CLASS_TREND = rowSums(x = .[, c("ADF_TREND1",
+                                                       "ADF_TREND2",
+                                                       "KPSS_TREND")]),
+         NONSTATIONARY_CLASS_LEVEL = rowSums(x = .[, c("ADF_NONE",
+                                                       "ADF_DRIFT",
+                                                       "KPSS_LEVEL")]),)
 
-  
 
 
+# 6 -----------------------------------------------------------------------
+# Inspection of variables which have been detected as non-stationary by all of the tests
+nonstat_6 <- stationarity_testing_short %>% 
+  filter(NONSTATIONARY_CLASS == 6) %>% 
+  select(VARIABLE) %>% 
+  as_vector() %>% 
+  paste()
+# there are none
+
+
+# 5 -----------------------------------------------------------------------
 # Inspection of variables which have been detected as non-stationary by all of the tests
 nonstat_5 <- stationarity_testing_short %>% 
   filter(NONSTATIONARY_CLASS == 5) %>% 
@@ -222,6 +292,10 @@ tidy_yx_yq_stat %>%
   theme_thesis +
   theme(legend.position = "none")
 
+# More detailed check
+stationarity_testing_short %>% 
+  filter(VARIABLE == "UMCSEN_TX")
+
 # Comments:
 # - HW_IX: Help-Wanted Advertising in Newspapers for United States (tcode: 1)
 #          Clearly the time series is non-stationary. However, while online only data is available up to 1966, the series in FRED-QD publishes 
@@ -230,9 +304,13 @@ tidy_yx_yq_stat %>%
 # - NWP_IX: Households and nonprofit organizations; net worth as a percentage of disposable personal income, Level (tcode: 1)
 #           Clearly non-stationary. Transformation: 5 instead of 1
 #           -> keep 
+# - UMCSEN_TX: University of Michigan: Consumer Sentiment (Index 1st Quarter 1966=100) (tcode: 1)
+#              Volatility clusters. Transformation: 5 instead of 1
+#              -> keep 
 
 
 
+# 4 -----------------------------------------------------------------------
 # Inspection of variables which have been detected as non-stationary by 4 of the tests
 nonstat_4 <- stationarity_testing_short %>% 
   filter(NONSTATIONARY_CLASS == 4) %>% 
@@ -242,13 +320,15 @@ nonstat_4 <- stationarity_testing_short %>%
 # there are none
 
 
+
+# 3 -----------------------------------------------------------------------
 # Inspection of variables which have been detected as non-stationary by 3 of the tests
 nonstat_3 <- stationarity_testing_short %>% 
   filter(NONSTATIONARY_CLASS == 3) %>% 
   select(VARIABLE) %>% 
   as_vector() %>% 
   paste()
-# there are none
+
 
 
 tidy_yx_yq_stat %>% 
@@ -261,6 +341,14 @@ tidy_yx_yq_stat %>%
   scale_color_viridis(discrete = TRUE) +
   theme_thesis +
   theme(legend.position = "none")
+
+# More detailed check
+stationarity_testing_short %>% 
+  filter(VARIABLE %in% nonstat_3)
+
+trans_info_yq %>% 
+  clean_names(case = "all_caps") %>% 
+  select(nonstat_3)
 
 # Comments:
 # - DRIWCIL: FRB Senior Loans Officer Opions. Net Percentage of Domestic Respondents Reporting Increased Willingness to Make Consumer Installment Loans (tcode: 1)
@@ -281,17 +369,28 @@ tidy_yx_yq_stat %>%
 # - TLBSNNBBD_IX: Nonfinancial Noncorporate Business Sector Liabilities to Disposable Business Income (Percent)
 #                 Looks slightly trending. KPSS suggests non-stationary. Transformation: 2 instead of 1
 #                 -> keep
+# - CES2000000008X: Real Average Hourly Earnings of Production and Nonsupervisory Employees: Construction (2012 Dollars per Hour), deflated by Core PCE (tcode: 5)
+#                   No constant mean. no change
+#                   -> keep
+# - CES3000000008X: Real Average Hourly Earnings of Production and Nonsupervisory Employees: Construction (2012 Dollars per Hour), deflated by Core PCE (tcode: 5)
+#                   No constant mean. no change
+#                   -> keep
+# - GS1TB3MX: 1-Year Treasury Constant Maturity Minus 3-Month Treasury Bill, secondary market (Percent) (tcode: 1)
+#             No constant mean. Transformation: 2 instead of 1
+#             -> keep     
 
 
 
-# Inspection of variables which have been detected as non-stationary by 3 of the tests
+
+
+
+# 2 -----------------------------------------------------------------------
+# Inspection of variables which have been detected as non-stationary by 2 of the tests
 nonstat_2 <- stationarity_testing_short %>% 
   filter(NONSTATIONARY_CLASS == 2) %>% 
   select(VARIABLE) %>% 
   as_vector() %>% 
   paste()
-# there are none
-
 
 tidy_yx_yq_stat %>% 
   select(DATE_QUARTER, nonstat_2) %>% 
@@ -304,6 +403,13 @@ tidy_yx_yq_stat %>%
   theme_thesis +
   theme(legend.position = "none")
 
+# More detailed check
+stationarity_testing_short %>% 
+  filter(VARIABLE %in% nonstat_2)
+
+trans_info_yq %>% 
+  clean_names(case = "all_caps") %>% 
+  select(nonstat_2)
 
 # Comments:
 # - TCU: Capacity Utilization: Total Industry (Percent of Capacity) (tcode: 1)
@@ -312,39 +418,27 @@ tidy_yx_yq_stat %>%
 # - AHETPIx: Real Average Hourly Earnings of Production and Nonsupervisory Employees: Total Private (2012 Dollars per Hour), deflated by Core PCE (tcode: 5)
 #            Data series starts later. 
 #            -> drop 
-# - SPCS20RSA: All-Transactions House Price Index for the United States (Index 1980 Q1=100) (tcode: 5)
-#              Data series starts later. 
-#              -> drop 
-
-
-
-
-# Define no change variables
-nochange_variables <- c("UMCSEN_TX",
-                        "")
-
-
-# Define dropping variables
-drop_variables <- c("HW_IX",                                               # drop because of unclear data availability
-                    "DRIWCIL",
-                    "SPCS10RSA",
-                    "SPCS20RSA",
-                    "TCU",
-                    "AHETP_IX",
-                    "USSTHPI")
-
-
-
-
-
-
-
-
-
-
-
-
-# -------------------------------------------------------------------------
+# - USSTHPI: All-Transactions House Price Index for the United States (Index 1980 Q1=100) (tcode: 5)
+#            Data series starts later. 
+#            -> drop
+# - CUMFNS: Capacity Utilization: Manufacturing (SIC) (Percent of Capacity) (tcode: 1)
+#           Clearly trending: Transformation: 2 instead of 1
+#           -> keep
+# - USEHS: All Employees: Education & Health Services (Thousands of Persons) (tcode: 5)
+#          Neither trend stationary nor variance stationary. Series is already transformed as percentage change
+#          -> drop
+# - AWHMAN: Average Weekly Hours of Production and Nonsupervisory Employees: Manufacturing (Hours) (tcode: 5)
+#           Series is trending. Transformation: 2 instead of 1
+#           -> keep
+# - BAA10YM: Moody's Seasoned Baa Corporate Bond Yield Relative to Yield on 10-Year Treasury Constant Maturity (Percent) (tcode: 1)
+#            Series is trending. Transformation: 5 instead of 1
+#            -> keep
+# - TB3SMFFM: 3-Month Treasury Constant Maturity Minus Federal Funds Rate
+#             Volatility clusters. Transformation: 2 instead of 1
+#             -> keep
+# - COMPAPFF: 3-Month Commercial Paper Minus Federal Funds Rate
+#             Volatility clusters. Transformation: 2 instead of 1
+#             -> keep
 
 
 
@@ -357,166 +451,209 @@ drop_variables <- c("HW_IX",                                               # dro
 
 
 
+# 1 -----------------------------------------------------------------------
+# Inspection of variables which have been detected as non-stationary by 1 of the tests
+nonstat_1 <- stationarity_testing_short %>% 
+  filter(NONSTATIONARY_CLASS == 1) %>% 
+  select(VARIABLE) %>% 
+  as_vector() %>% 
+  paste()
 
-# Visual inspection of variables which have been detected as non-stationary by both tests
+
 tidy_yx_yq_stat %>% 
-  select(DATE_QUARTER, variabels_nonstat2) %>% 
-  #select(DATE_QUARTER, AWHMAN) %>%                                         # trend (tcode: 1)
-  #select(DATE_QUARTER, HW_IX) %>%                                          # trend (tcode: 1)
-  #select(DATE_QUARTER, CES2000000008X) %>%                                 # not mean-stationary (tcode: 5)
-  #select(DATE_QUARTER, CES3000000008X) %>%                                 # not variance-stationary (tcode: 5)
-  #select(DATE_QUARTER, GS1TB3MX) %>%                                       # not variance-stationary (tcode: 1)
-  select(DATE_QUARTER, NWP_IX) %>%                                          # trend (tcode: 1)
+  select(DATE_QUARTER, nonstat_1) %>% 
   melt(id.vars = "DATE_QUARTER", variable.name = "ESTIMATES") %>% 
   as_tibble() %>% 
   ggplot() +
   geom_line(aes(x = DATE_QUARTER, y = value, color = ESTIMATES), alpha = 0.5) +
+  facet_wrap("ESTIMATES", scales = "free") +
   scale_color_viridis(discrete = TRUE) +
-  theme_thesis
-
-# Define dropping variables
-variables_drop2 <- variabels_nonstat2
+  theme_thesis +
+  theme(legend.position = "none")
 
 
-### Check stationary variables ############################################
+
+# From nonstat1 check the variables where the KPSS test hints to rejecting trend stationarity at the 1% level
+nonstat_1_trend <- stationarity_testing %>% 
+  filter(VARIABLE%in%nonstat_1) %>%                                        # filter variables in nonstat_1
+  filter(KPSS_TREND=="non-stationary"|KPSS_LEVEL=="non-stationary") %>%    # filter those variables which were classified as non-stationary by KPSS test
+  select(VARIABLE,contains("PVALUE")) %>%                                  # select p-value of KPSS test
+  filter(KPSS_MODEL_TREND_PVALUE==0.01) %>%                                # select variables with p-value of 0.01 in trend stationarity test (sure to reject trend stationarity)
+  select(VARIABLE) %>% 
+  as_vector() %>% 
+  paste()
 
 tidy_yx_yq_stat %>% 
-  #select(-variabels_nonstat) %>% 
-  #select(-c("NONBORRES","TNWMVBSNNCBBD_IX", 
-  #"TNWBSNNBBD_IX", "TOTRESNS")) %>% 
-  #select("DATE_QUARTER", "NONBORRES") %>%                                 # i.O.     
-  select("DATE_QUARTER", "TNWMVBSNNCBBD_IX") %>%                          # drop
-  #select("DATE_QUARTER", "TNWBSNNBBD_IX") %>%                             # drop
-  #select("DATE_QUARTER", "TOTRESNS") %>%                                  # i.O.
+  select(DATE_QUARTER, nonstat_1_trend) %>% 
   melt(id.vars = "DATE_QUARTER", variable.name = "ESTIMATES") %>% 
   as_tibble() %>% 
   ggplot() +
-  geom_line(aes(x = DATE_QUARTER, y = value, color = ESTIMATES)) +
+  geom_line(aes(x = DATE_QUARTER, y = value, color = ESTIMATES), alpha = 0.5) +
+  facet_wrap("ESTIMATES", scales = "free") +
   scale_color_viridis(discrete = TRUE) +
   theme_thesis +
   theme(legend.position = "none")
 
+# More detailed check
+stationarity_testing_short %>% 
+  filter(VARIABLE %in% nonstat_1_trend)
 
-# NONBORRES
 trans_info_yq %>% 
-  select("NONBORRES")
+  clean_names(case = "all_caps") %>% 
+  select(nonstat_1_trend)
 
-tidy_yx_yq %>% 
-  #select(-variabels_nonstat) %>% 
-  #select(-c("NONBORRES","TNWMVBSNNCBBD_IX", "TNWBSNNBBD_IX", "TOTRESNS")) %>% 
-  select("DATE_QUARTER", "NONBORRES") %>% 
-  #select("DATE_QUARTER", "TNWMVBSNNCBBD_IX") %>% 
-  #select("DATE_QUARTER", "TNWBSNNBBD_IX") %>% 
-  #select("DATE_QUARTER", "TOTRESNS") %>% 
+
+
+
+# From nonstat1 check the variables where the KPSS test hints to to rejecting level stationarity at the 1% level
+nonstat_1_level <- stationarity_testing %>% 
+  filter(VARIABLE%in%nonstat_1) %>%                                        # filter variables in nonstat_1
+  filter(KPSS_TREND=="non-stationary"|KPSS_LEVEL=="non-stationary") %>%    # filter those variables which were classified as non-stationary by KPSS test
+  select(VARIABLE,contains("PVALUE")) %>%                                  # select p-value of KPSS test
+  filter(KPSS_MODEL_LEVEL_PVALUE==0.01) %>%                                # select variables with p-value of 0.01 in level stationarity test (sure to reject level stationarity)
+  select(VARIABLE) %>% 
+  as_vector() %>% 
+  paste()
+
+tidy_yx_yq_stat %>% 
+  select(DATE_QUARTER, nonstat_1_level) %>% 
   melt(id.vars = "DATE_QUARTER", variable.name = "ESTIMATES") %>% 
   as_tibble() %>% 
   ggplot() +
-  geom_line(aes(x = DATE_QUARTER, y = value, color = ESTIMATES)) +
+  geom_line(aes(x = DATE_QUARTER, y = value, color = ESTIMATES), alpha = 0.5) +
+  facet_wrap("ESTIMATES", scales = "free") +
   scale_color_viridis(discrete = TRUE) +
   theme_thesis +
   theme(legend.position = "none")
 
+# More detailed check
+stationarity_testing_short %>% 
+  filter(VARIABLE %in% nonstat_1_level)
 
-# TNWMVBSNNCBBD_IX
 trans_info_yq %>% 
-  select("TNWMVBSNNCBBDIx")
+  clean_names(case = "all_caps") %>% 
+  select(nonstat_1_level)
 
-tidy_yx_yq %>% 
-  #select(-variabels_nonstat) %>% 
-  #select(-c("NONBORRES","TNWMVBSNNCBBD_IX", "TNWBSNNBBD_IX", "TOTRESNS")) %>% 
-  #select("DATE_QUARTER", "NONBORRES") %>% 
-  select("DATE_QUARTER", "TNWMVBSNNCBBD_IX") %>% 
-  #select("DATE_QUARTER", "TNWBSNNBBD_IX") %>% 
-  #select("DATE_QUARTER", "TOTRESNS") %>% 
+
+
+# From nonstat1 remaining variables
+nonstat_1_remain <- stationarity_testing %>% 
+  filter(VARIABLE%in%nonstat_1) %>%                                        # filter variables in nonstat_1
+  filter(KPSS_TREND=="non-stationary"|KPSS_LEVEL=="non-stationary") %>%    # filter those variables which were classified as non-stationary by KPSS test
+  select(VARIABLE,contains("PVALUE")) %>%                                  # select p-value of KPSS test
+  filter(VARIABLE %in% setdiff(nonstat_1,                                  # select remaining variables
+                               c(nonstat_1_level, nonstat_1_trend))) %>%                               
+  select(VARIABLE) %>% 
+  as_vector() %>% 
+  paste()
+
+tidy_yx_yq_stat %>% 
+  select(DATE_QUARTER, nonstat_1_remain) %>% 
   melt(id.vars = "DATE_QUARTER", variable.name = "ESTIMATES") %>% 
   as_tibble() %>% 
   ggplot() +
-  geom_line(aes(x = DATE_QUARTER, y = value, color = ESTIMATES)) +
+  geom_line(aes(x = DATE_QUARTER, y = value, color = ESTIMATES), alpha = 0.5) +
+  facet_wrap("ESTIMATES", scales = "free") +
   scale_color_viridis(discrete = TRUE) +
   theme_thesis +
   theme(legend.position = "none")
 
+# More detailed check
+stationarity_testing_short %>% 
+  filter(VARIABLE %in% nonstat_1_remain)
 
-# TNWBSNNBBD_IX
+stationarity_testing %>% 
+  filter(VARIABLE%in%nonstat_1_remain) %>%
+  select(VARIABLE,contains("PVALUE"))
+
 trans_info_yq %>% 
-  select("TNWBSNNBBDIx")
-
-tidy_yx_yq %>% 
-  #select(-variabels_nonstat) %>% 
-  #select(-c("NONBORRES","TNWMVBSNNCBBD_IX", "TNWBSNNBBD_IX", "TOTRESNS")) %>% 
-  #select("DATE_QUARTER", "NONBORRES") %>% 
-  #select("DATE_QUARTER", "TNWMVBSNNCBBD_IX") %>% 
-  select("DATE_QUARTER", "TNWBSNNBBD_IX") %>% 
-  #select("DATE_QUARTER", "TOTRESNS") %>% 
-  melt(id.vars = "DATE_QUARTER", variable.name = "ESTIMATES") %>% 
-  as_tibble() %>% 
-  ggplot() +
-  geom_line(aes(x = DATE_QUARTER, y = value, color = ESTIMATES)) +
-  scale_color_viridis(discrete = TRUE) +
-  theme_thesis +
-  theme(legend.position = "none")
+  clean_names(case = "all_caps") %>% 
+  select(nonstat_1_level)
 
 
-# TOTRESNS
-trans_info_yq %>% 
-  select("TOTRESNS")
 
-tidy_yx_yq %>% 
-  #select(-variabels_nonstat) %>% 
-  #select(-c("NONBORRES","TNWMVBSNNCBBD_IX", "TNWBSNNBBD_IX", "TOTRESNS")) %>% 
-  #select("DATE_QUARTER", "NONBORRES") %>% 
-  #select("DATE_QUARTER", "TNWMVBSNNCBBD_IX") %>% 
-  #select("DATE_QUARTER", "TNWBSNNBBD_IX") %>% 
-  select("DATE_QUARTER", "TOTRESNS") %>% 
-  melt(id.vars = "DATE_QUARTER", variable.name = "ESTIMATES") %>% 
-  as_tibble() %>% 
-  ggplot() +
-  geom_line(aes(x = DATE_QUARTER, y = value, color = ESTIMATES)) +
-  scale_color_viridis(discrete = TRUE) +
-  theme_thesis +
-  theme(legend.position = "none")
+### Non-stationarity handling ---------------------------------------------
+
+# Define no change variables
+nochange_variables <- c("UMCSEN_TX",
+                        "USEHS",
+                        "PCECC96",
+                        "DPIC96",
+                        "IPFINAL",
+                        "PAYEMS",
+                        "NDMANEMP",
+                        "USLAH",
+                        "CE16OV",
+                        "RCPHBS",
+                        "UNLPNBS",
+                        "TB6M3MX",
+                        "GS10TB3MX",
+                        "M1REAL",
+                        "TLBSHN_OX",
+                        "TB3SMFFM",
+                        "COMPAPFF",
+                        "PCES_VX",
+                        "A014RE1Q156NBEA",
+                        "SLC_EX",
+                        "IPCONGD",
+                        "IPNMAT",
+                        "IPNCONGD",
+                        "IPB51220SQ",
+                        "SRVPRD",
+                        "USFIRE",
+                        "USSERV",
+                        "USTPU",
+                        "USGOVT",
+                        "USTRADE",
+                        "USWTRADE",
+                        "CES9092000001",
+                        "CES9093000001",
+                        "CIVPART",
+                        "RSAF_SX",
+                        "CES2000000008X",
+                        "CES3000000008X",
+                        "ULCBS",
+                        "ULCNFB",
+                        "GS1TB3MX",
+                        "CPF3MTB3MX",
+                        "IPB51222S",
+                        "AAAFFM",
+                        "BUSIN_VX",
+                        "LIABP_IX",
+                        "M2REAL",
+                        "NONREVS_LX",
+                        "CONSP_IX")
 
 
 # Define dropping variables
-variables_drop3 <- c("TNWMVBSNNCBBD_IX",                                   # outlier
-                     "TNWBSNNBBD_IX")                                      # outlier
+drop_variables <- c("HW_IX")                                               # drop because of unclear data availability
+          
 
-# Bind dropping variables
-variables_drop <- c(variables_drop1,
-                    variables_drop2,
-                    variables_drop3)
-
-# Final stationary dataset without dropping variables
+# Drop dropping variables
 tidy_yx_yq_stat <- tidy_yx_yq_stat %>% 
-  select(-variables_drop)
+  select(-drop_variables)
+  
+
+
+
+
+
+
+
+
+
 
 
 
 ## Final data ==============================================================
-# Dropping features as series has only started later in time (missings at beginning of series) or due to substantial time lag in publishing (missings at end of series)
-sapply(tidy_yx_yq_stat %>% 
-         filter(!(row.names(.) %in% c(1,2))), function(x) which(is.na(x))) %>% 
-  lapply(., function(x) length(x)>2) %>% 
-  as_tibble() %>% 
-  t() %>% 
-  as_tibble(rownames = "FEATURES") %>% 
-  filter(V1) %>% 
-  View()
 
-tidy_yx_yq_stat <- tidy_yx_yq_stat %>% 
-  filter(!(row.names(.) %in% c(1,2))) %>%                                   # drop first to rows since these will be missing for most variables due to differencing
-  drop_cols_any_na()                                                        # drop all remaining columns with any NA (see step above)
-
-
-
-# The following leading indicators exist (only NASDAQ)
+# The following leading indicators exist (only NASDAQ drops as series starts later)
 tidy_yx_yq_stat$HOUST
 tidy_yx_yq_stat$AMDMN_OX
 tidy_yx_yq_stat$S_P_500
 tidy_yx_yq_stat$UMCSEN_TX
 tidy_yx_yq_stat$AWHMAN
 tidy_yx_yq_stat$CPF3MTB3MX
-
 
   
 

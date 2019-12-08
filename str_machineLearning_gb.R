@@ -12,26 +12,35 @@ npar_gb <- 3      # Number of tuning parameters
 
 # Finetuning setup
 # Final learner
+learner_gb <- makeLearner(cl = "regr.gbm", 
+                          id = "gbm", 
+                          predict.type = "response",
+                          distribution = "gaussian",                  # squared loss function
+                          bag.fraction = 1,                           # equivalent to no bagging. I.e. all predictors are used building trees
+                          n.minobsinnode = 1,                         # minimum number of instances needed to be in each node
+                          keep.data = FALSE)
+
 learner_gb <- makeLearner(cl = "regr.xgboost", 
                           id = "xgboost", 
                           predict.type = "response", 
                           objective = "reg:squarederror",             # squared loss function
                           colsample_bytree = 1,                       # equivalent to no bagging. I.e. all predictors are used building trees
                           min_child_weight = 1                        # minimum number of instances needed to be in each node
-)
+)             
+
 
 # Name of tuning parameters
-ntree_gb <- "nrounds" 
-rate_gb <- "eta"
-depth_gb <- "max_depth"
+ntree_gb <- "n.trees" 
+rate_gb <- "shrinkage"
+depth_gb <- "interaction.depth"
 
 # Finetuning parameter threshholds
-ntree_low <- 300
-ntree_up <- 600
-depth_low <- 2
-depth_up <- 8
-rate_low <- 0.001   # check trafo
-rate_up <- 0.01
+ntree_low <- 500
+ntree_up <- 500
+depth_low <- 0.025
+depth_up <- 0.025
+rate_low <- 9          # check trafo
+rate_up <- 9
 
 
 
@@ -94,7 +103,7 @@ getParamSet("regr.xgboost")
 tuning_ps_gb.gbm <- makeParamSet(
   makeNumericParam("n.trees",                                              # define tuning parameter
                    lower = 10,                                             # lower value of continuous parameter space
-                   upper = 500,                                           # upper value of parameter space
+                   upper = 1000,                                           # upper value of parameter space
                    trafo = function(x) ceiling(x)),                        # function applied to parameter values (here ceiling to assure that parameters are integers)
   makeNumericParam("interaction.depth", 
                    lower = 1,                                              # lower limit of maximum depth of trees, here set to 1 (= all trees are stumps)
@@ -109,7 +118,7 @@ tuning_ps_gb.gbm <- makeParamSet(
 tuning_ps_gb.xgb <- makeParamSet(
   makeNumericParam("nrounds",                                              # define tuning parameter
                    lower = 10,                                             # lower value of continuous parameter space
-                   upper = 500,                                           # upper value of parameter space
+                   upper = 1000,                                           # upper value of parameter space
                    trafo = function(x) ceiling(x)),                        # function applied to parameter values (here ceiling to assure that parameters are integers)
   makeNumericParam("max_depth", 
                    lower = 1,                                              # lower limit of maximum depth of trees, here set to 1 (= all trees are stumps)
@@ -144,6 +153,7 @@ tuning_results_gb.gbm <- tuneParams(learner = learner_gb.gbm,
                                    resampling = cv_tuning,
                                    par.set = tuning_ps_gb.gbm, 
                                    control = tuning_control, 
+                                   measures = rmse,
                                    show.info = TRUE)
 
 set.seed(333)
@@ -152,6 +162,7 @@ tuning_results_gb.xgb <- tuneParams(learner = learner_gb.xgb,
                                    resampling = cv_tuning,
                                    par.set = tuning_ps_gb.xgb, 
                                    control = tuning_control, 
+                                   measures = rmse,
                                    show.info = TRUE)
 
 ## Performance estimation =================================================
@@ -183,7 +194,7 @@ set.seed(333)
 performance_benchmark_gb <- benchmark(learners = learner_list, 
                                       tasks = task_overall, 
                                       resamplings = cv_test, 
-                                      measures = rmse,
+                                      measures = list(rmse,medaeTestMedian),
                                       keep.pred = TRUE, 
                                       keep.extract = TRUE, 
                                       show.info = TRUE)
@@ -212,22 +223,22 @@ if(finetuning_gb){
 ### Create hyperparameter set #############################################
 
   tuning_ps_gb <- makeParamSet(
-    makeNumericParam("nrounds",                                             # define tuning parameter
+    makeNumericParam(ntree_gb,                                             # define tuning parameter
                      lower = ntree_low,                                     # lower value of continuous parameter space
                      upper = ntree_up,                                      # upper value of parameter space
                      trafo = function(x) ceiling(x)),                       # function applied to parameter values (here ceiling to assure that parameters are integers)
-    makeNumericParam("max_depth", 
+    makeNumericParam(depth_gb, 
                      lower = depth_low,                                     # lower limit of maximum depth of trees
                      upper = depth_up,                                      # upper limit of maximum depth of trees
                      trafo = function(x) ceiling(x)),
-    makeNumericParam("eta", 
+    makeNumericParam(rate_gb, 
                      lower = rate_low,                                      
                      upper = rate_up,                                       
                      trafo = function(x) (x))
   )
 ### Define optimization algorithm #########################################
 # Grid search is applied in this thesis
-tuning_control <- makeTuneControlGrid(resolution = c(nrounds = 11, eta = 10, max_depth = 7))      # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
+tuning_control <- makeTuneControlGrid(resolution = c(n.trees = 11, shrinkage = 11, interaction.depth = 6))      # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
 
 
 
@@ -235,13 +246,17 @@ tuning_control <- makeTuneControlGrid(resolution = c(nrounds = 11, eta = 10, max
 parallelMap::parallelStartSocket(cpus = 4, 
                                  show.info = TRUE)
 
+if(tuning){
 set.seed(333)
 finetuning_results_gb <- tuneParams(learner = learner_gb,
                                     task = task_training,
                                     resampling = cv_tuning,
                                     par.set = tuning_ps_gb, 
                                     control = tuning_control, 
-                                    show.info = TRUE)
+                                    measures = rmse,
+                                    show.info = TRUE) 
+}
+
 
 ## Performance estimation =================================================
 # Outer loop of nested resampling
@@ -251,11 +266,18 @@ finetuning_results_gb <- tuneParams(learner = learner_gb,
 
 ### Redefine learner given optimal parameters #############################
 
-
+if(tuning){
 learner_tuned_gb <- setHyperPars(learner = learner_gb,
-                                 nrounds = finetuning_results_gb$x[[1]], 
-                                 max_depth = finetuning_results_gb$x[[2]],
-                                 eta = finetuning_results_gb$x[[3]])
+                                 n.trees = finetuning_results_gb$x[[1]], 
+                                 interaction.depth = finetuning_results_gb$x[[2]],
+                                 shrinkage = finetuning_results_gb$x[[3]])
+}
+else{
+  learner_tuned_gb <- setHyperPars(learner = learner_gb,
+                                   nrounds = ntree_low, 
+                                   eta = depth_low,
+                                   max_depth = rate_low)
+}
 
 
 ### Performance results ###################################################
@@ -265,7 +287,7 @@ set.seed(333)
 performance_results_gb <- resample(learner = learner_tuned_gb,
                                    task = task_overall,
                                    resampling = cv_test,
-                                   measures = rmse,
+                                   measures = list(rmse,medaeTestMedian),
                                    keep.pred = TRUE,
                                    show.info = TRUE,
                                    models = TRUE)                      # save models for later assessment of variable importance

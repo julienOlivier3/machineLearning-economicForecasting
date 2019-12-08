@@ -8,13 +8,13 @@ training_end <- "2007 Q1"         # Set the last quarter of training data, the s
 
 
 # VAR
-VAR_variables <- c("REAL_GDP_GROWTH", 
+VAR_variables <- c("REAL_GDP_GROWTH",
                    "HOUST",           # Housing Starts: Total: New Privately Owned Housing Units Started (Thousands of Units)
                    "AMDMN_OX",        # Real Manufacturers' New Orders: Durable Goods (Millions of 2012 Dollars), deflated by Core PCE
-                   "S_P_500",         # S&P's Common Stock Price Index: Composite
+                   #"S_P_500",         # S&P's Common Stock Price Index: Composite
                    "UMCSEN_TX",       # University of Michigan: Consumer Sentiment (Index 1st Quarter 1966=100)
                    "AWHMAN",          # Average Weekly Hours of Production and Nonsupervisory Employees: Manufacturing (Hours)
-                   "T5YFFM")          # 5-year treasury constant maturity rate and federal funds rate
+                   "T5YFFM")        # 3-month treasury constant maturity rate and federal funds rate
 
 # VAR_variables <- c("CPIAUCSL",
 #                    "FEDFUNDS",
@@ -119,6 +119,78 @@ summary(model_VAR$varresult$REAL_GDP_GROWTH)
 
 
 
+# Granger causality -------------------------------------------------------
+# Tests whether independent variables granger cause dependent variable (REAL_GDP_GROWTH).
+# Basically this is a F-Test comparing explanatory power of an unrestricted model with all variables (Y & X) and the smaller model
+# without the variable whose "causality" should be tested.
+# In its core the Granger causality test is a F-Test with H_0: R^2 of the unrestricted model including the lagged values 
+# of Y and X is equal to the R^2 of the smaller model with only lagged values of Y. The ratio of both R^2 builds the F-statistic.
+# For large values of the F-statitistic H_0 (no "granger causality") can be rejected.
+
+
+
+## Joint Granger causality ================================================
+
+# Joint granger causality test (causality of one variable on all other variables)
+granger_VAR_joint1 <- data_training %>% 
+  select(VAR_variables) %>%
+  colnames() %>% 
+  enframe(name = NULL, value = "SERIES") %>% 
+  mutate(GRANGER = map(SERIES, function(x) causality(model_VAR, cause = x, vcov. = vcovHC(model_VAR))$Granger),
+         P_VALUE = map(GRANGER, ~ .$p.value[1,1])) %>% 
+  unnest(P_VALUE)
+
+#granger_VAR_joint1
+
+
+# Joint granger causality test (causality of all variables on one variables)
+granger_VAR_joint2 <- data_training %>% 
+  select(VAR_variables) %>%
+  colnames() %>% 
+  enframe(name = NULL, value = "SERIES") %>% 
+  mutate(GRANGER = map(SERIES, function(x) causality(model_VAR, cause = VAR_variables[!(VAR_variables == x)], vcov. = vcovHC(model_VAR))$Granger),
+         P_VALUE = map(GRANGER, ~ .$p.value[1,1])) %>% 
+  unnest(P_VALUE)
+
+granger_VAR_joint2 %>% 
+  mutate(P_VALUE=format(P_VALUE, scientific=FALSE))
+
+
+
+
+
+
+# Granger causality of all features on traget variable
+model_VAR %>% 
+  causality(cause = VAR_variables[!str_detect(string = VAR_variables, pattern = "REAL_GDP_GROWTH")], vcov. = vcovHC(.)) %>% 
+  .$Granger
+
+
+## Individual Granger causality ===========================================
+
+ 
+# Test whether the inclusion of the respective variable improves
+# the minimal model with only lagged values of the target (AR model)
+granger_VAR_ind <- tibble(.rows = ncol(data_training)) %>%                 # create tibble with number of rows being equal to the number of columns in dataframe input
+  mutate(VARIABLE = colnames(data_training)) %>%                           # create string column with column names as input
+  mutate(SERIES = map(data_training, ~ (c(t(.))))) %>%                     # create column with nested time series of respective variable
+  filter(VARIABLE != "DATE_QUARTER") %>% 
+  filter(VARIABLE != "REAL_GDP_GROWTH") %>% 
+  mutate(GRANGER = map(SERIES, function(v) grangertest(x = data_training$REAL_GDP_GROWTH, y = v, order = final_p)),
+         P_VALUE = map(GRANGER, ~ .$`Pr(>F)`[2])
+         ) %>% 
+  unnest(P_VALUE)
+
+granger_VAR_ind
+
+
+# Test whether the inclusion of the respective variable improves
+# the full model including all variables
+#function_granger_stepwise(df = data_training, lags = final_p)
+
+
+
+
 # Analysis residuals ------------------------------------------------------
 ## Complete VAR model =====================================================
 # Define residuals tibbel
@@ -132,10 +204,10 @@ residual <- model_VAR %>%
 
 # Residual ACF (compress plots into one figure here)
 for (v in VAR_variables){
-    print(residual %>% 
-    select(v) %>% 
-    ggAcf(main = "", lag.max = lag_max) +                                     # plot empirical ACF
-    theme_thesis)
+  print(residual %>% 
+          select(v) %>% 
+          ggAcf(main = "", lag.max = lag_max) +                                     # plot empirical ACF
+          theme_thesis)
   
 }
 
@@ -150,9 +222,10 @@ serial.test(model_VAR,
 
 BoxPierce(model_VAR, lags = seq(10,50,5)) %>%                              # identical to serial.test above
   as_tibble()
-LjungBox(model_VAR, lags = seq(10,40,5))
 
-# Additional Test
+
+# Additional Tests
+LjungBox(model_VAR, lags = seq(10,40,5))
 Hosking(model_VAR, lags = seq(10,40,5))
 
 
@@ -203,77 +276,6 @@ residual %>%
            fitdf = 0)  
 # cannot reject the H_0 that residuals are independent (White noise) as p > 0.01 or alternatively 
 # cannot reject the H_0 that autocorrelation in residual series is not statistically different from a zero set
-
-
-
-
-# Granger causality -------------------------------------------------------
-# Tests whether independent variables granger cause dependent variable (REAL_GDP_GROWTH).
-# Basically this is a F-Test comparing explanatory power of an unrestricted model with all variables (Y & X) and the smaller model
-# without the variable whose "causality" should be tested.
-# In its core the Granger causality test is a F-Test with H_0: R^2 of the unrestricted model including the lagged values 
-# of Y and X is equal to the R^2 of the smaller model with only lagged values of Y. The ratio of both R^2 builds the F-statistic.
-# For large values of the F-statitistic H_0 (no "granger causality") can be rejected.
-
-
-
-## Joint Granger causality ================================================
-
-# Joint granger causality test (causality of one variable on all other variables)
-granger_VAR_joint1 <- data_training %>% 
-  select(VAR_variables) %>%
-  colnames() %>% 
-  enframe(name = NULL, value = "SERIES") %>% 
-  mutate(GRANGER = map(SERIES, function(x) causality(model_VAR, cause = x, vcov. = vcovHC(model_VAR))$Granger),
-         P_VALUE = map(GRANGER, ~ .$p.value[1,1])) %>% 
-  unnest(P_VALUE)
-
-granger_VAR_joint1
-
-
-# Joint granger causality test (causality of all variables on one variables)
-granger_VAR_joint2 <- data_training %>% 
-  select(VAR_variables) %>%
-  colnames() %>% 
-  enframe(name = NULL, value = "SERIES") %>% 
-  mutate(GRANGER = map(SERIES, function(x) causality(model_VAR, cause = VAR_variables[!(VAR_variables == x)], vcov. = vcovHC(model_VAR))$Granger),
-         P_VALUE = map(GRANGER, ~ .$p.value[1,1])) %>% 
-  unnest(P_VALUE)
-
-granger_VAR_joint2
-
-
-
-
-
-
-# Granger causality of all features on traget variable
-model_VAR %>% 
-  causality(cause = VAR_variables[!str_detect(string = VAR_variables, pattern = "REAL_GDP_GROWTH")], vcov. = vcovHC(.)) %>% 
-  .$Granger
-
-
-## Individual Granger causality ===========================================
-
- 
-# Test whether the inclusion of the respective variable improves
-# the minimal model with only lagged values of the target (AR model)
-granger_VAR_ind <- tibble(.rows = ncol(data_training)) %>%                 # create tibble with number of rows being equal to the number of columns in dataframe input
-  mutate(VARIABLE = colnames(data_training)) %>%                           # create string column with column names as input
-  mutate(SERIES = map(data_training, ~ (c(t(.))))) %>%                     # create column with nested time series of respective variable
-  filter(VARIABLE != "DATE_QUARTER") %>% 
-  filter(VARIABLE != "REAL_GDP_GROWTH") %>% 
-  mutate(GRANGER = map(SERIES, function(v) grangertest(x = data_training$REAL_GDP_GROWTH, y = v, order = final_p)),
-         P_VALUE = map(GRANGER, ~ .$`Pr(>F)`[2])
-         ) %>% 
-  unnest(P_VALUE)
-
-granger_VAR_ind
-
-
-# Test whether the inclusion of the respective variable improves
-# the full model including all variables
-function_granger_stepwise(df = data_training, lags = final_p)
 
 
 

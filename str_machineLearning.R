@@ -5,12 +5,12 @@ setwd("J:\\Studium\\Master\\Masterthesis")
 #training_start <- "1987 Q2"       # Set the first quarter of training data
 training_end <- "2007 Q1"         # Set the last quarter of training data, the subsequent quarter is the first quarter to be forecasted (Note: Go to "2007 Q1" once the latest observation is "2019 Q2")
 forecasting_periods <- 1          # Set how many periods ahead shall be forecasted (Note if forecasting_periods = 1: features will be lagged with lag order 1:max_lag, if forecasting_periods = 2: features will be lagged with lag order 2:max_lag, and so on)
-#n_ahead <- 4                      # Set how many periods ahead shall be forecasted (Note if n_ahead = 1: features will be lagged with lag order 1:max_lag, if n_ahead = 2: features will be lagged with lag order 2:max_lag, and so on)
-max_lag <- 1                      # Set how many lags of each variable shall be included in the feature space
+max_lag <- 10                      # Set how many lags of each variable shall be included in the feature space
 
 
 # mlr-SPECIFIC
 # Cross Validation
+tuning <- FALSE                     # is tuning required (TRUE if yes)
 growing <- TRUE                   # If TRUE, cross validation follows a growing window strategy, if FALSE a sliding window strategy
 horizon <- 1                      # Set the number of observations in the test set (default = 1, since we are doing one-step ahead forecasts)
 skip <- 10                        # Set the number of training/validation sets which should be skipped (choose one of: 5, 10 & 25; the higher the less CVs)
@@ -26,18 +26,23 @@ selective <- TRUE                 # set true if only a selected features shall b
 leading_i <- c(                   # define a list of leading indicators
                "HOUST",
                "AMDMN_OX",
-               "S_P_500",
+               #"S_P_500",
                "UMCSEN_TX",
                "AWHMAN",
-               "CPF3MTB3MX"
+               "TB3SMFFM"
                )
-forecasting_intervals <- 95       # Set forecasting confidence intervals
+#leading_i <- c()                  # define empty list if forecasting only based on lags of target
+
+
+
+
 #testing_end <- "2016 Q4"          # Set the last period in which test data starts  
                                   # in the iterative process of model estimation 
                                   # (e.g. training_end = "2007 Q1", testing_end = "2007 Q2",
                                   # forecasting_periods = 10 forecasts 10 periods ahead with
                                   # only based on training data training_start ~ training_end.
                                   # It does not extend the training sample iteratively.)
+
 
 
 #--------------------------------------------------------------------------
@@ -94,9 +99,11 @@ tidy_x_yq_stat <- tidy_yx_yq_stat %>%
     else . } %>%
   as_tibble() %>%
   mutate(DATE_QUARTER = as.Date(DATE_QUARTER)) %>%                         # coercing as type Date required for subsequent lag.xts operation
-  tq_mutate(select = NULL,                                                 # create lagged variables on all columns 
+  { if(!is.null(leading_i))
+      tq_mutate(., select = NULL,                                             # create lagged variables on all columns 
             mutate_fun = lag.xts,                                          # by means of lag.xts function from package timetk
-            k = forecasting_periods:(forecasting_periods+(max_lag-1))) %>%                         # number of lags to be calculated obeying the number of periods to be forecasted ahead
+            k = forecasting_periods:(forecasting_periods+(max_lag-1)))     # number of lags to be calculated obeying the number of periods to be forecasted ahead
+    else . } %>% 
   select(c(DATE_QUARTER, matches("\\.\\d"))) %>%                           # select only column DATE_QUARTER and all columns which end with ".digit" (these are lagged variables). note: "..1" = lag 1, ".1" = lag 2, ".2" = lag 3 and so on so forth
   mutate(DATE_QUARTER = yearquarter(DATE_QUARTER))                         # recoerce DATE_QUARTER as qtr data type
 
@@ -110,11 +117,6 @@ tidy_yx_yq_stat <- tidy_y_yq_stat %>%
 
 # Model estimation & forecasting ------------------------------------------
 ## Training and Testing split =============================================
-
-#MAKE SURE THAT THE NUMBER OF LAGS OF THE TARGET VALUE USED AS FEATURE VARIABLES IS DROPPED IN VALIDATION AND 
-#TESTING SETS. THERE NEEDS ALWAYS BE A GAP OF SIZE EQUAL TO THE NUMBER OF LAGS BETWEEN TRAINING SUBSET AND 
-#VALIDATION SET AND VALIDATION SET AND TESTING SET RESPECTIVELY. ONLY IN THIS WAY IT IS ENSURED THAT NO 
-#TRAINING DATA IS USED IN MODEL CALIBRATION AND NO VALIDATION DATA IS USED IN GENERAL MODEL EVALUATION.
 
 # Overall data
 data_overall <- tidy_yx_yq_stat %>% 
@@ -170,12 +172,12 @@ cv_test <- makeResampleDesc(method = ifelse(growing,
                             skip = 1,                                      # no forecasts shall be skipped. forecasting of ALL observations in the test set
                             predict = "both")
 
-
-
+# Define error measure (Median absolute value with the median as aggregation measure over test results)
+medaeTestMedian <- setAggregation(medae, test.median)
 ## Models =================================================================
 
 ### Random Forest #########################################################
-#source(file = file.path(getwd(), "Code", "str_machineLearning_rf.R"))
+source(file = file.path(getwd(), "Code", "str_machineLearning_rf.R"))
 
 
 ### Gradient Boosting #####################################################
@@ -183,7 +185,7 @@ source(file = file.path(getwd(), "Code", "str_machineLearning_gb.R"))
 
 
 ### Support Vector Regression #############################################
-#source(file = file.path(getwd(), "Code", "str_machineLearning_sv.R"))
+source(file = file.path(getwd(), "Code", "str_machineLearning_sv.R"))
 
 
 # -------------------------------------------------------------------------

@@ -4,7 +4,7 @@ setwd("J:\\Studium\\Master\\Masterthesis")
 # General
 #training_start <- "1987 Q2"       # Set the first quarter of training data
 training_end <- "2007 Q1"         # Set the last quarter of training data
-forecasting_periods <- 1          # Set number of forecasting periods (number of steps-ahead forecasting)
+forecasting_periods <- 4          # Set number of forecasting periods (number of steps-ahead forecasting)
 forecasting_intervals <- 95       # Set forecasting confidence intervals
 #testing_end <- "2016 Q4"          # Set the last period in which test data starts  
                                   # in the iterative process of model estimation 
@@ -17,35 +17,43 @@ forecasting_intervals <- 95       # Set forecasting confidence intervals
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 # ARIMA
-ARIMA_order <- c(2, 0, 0)
+ARIMA_order <- c(2, 0, 1)
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
 # VAR
 # Keynesian structural VAR
-VAR_variables <- c("REAL_GDP_GROWTH", 
-                   "FEDFUNDS", 
-                   "UNRATE", 
-                   "CPIAUCSL")
+VAR1_variables <- c("REAL_GDP_GROWTH",
+                   "FEDFUNDS",
+                   #"UNRATE",
+                   "CPIAUCSL"
+                   )
+
+VAR1_order <- 2
 
 # Leading indicator VAR
-VAR_variables <- c("REAL_GDP_GROWTH",
+VAR2_variables <- c("REAL_GDP_GROWTH",
                    "HOUST",
                    "AMDMN_OX",
-                   "S_P_500",
+                   #"S_P_500",        # drops in granger causality test
                    "UMCSEN_TX",
                    "AWHMAN",
-                   "T5YFFM")
+                   "TB3SMFFM")
 
-VAR_order <- 2
+VAR2_order <- 1
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 # FAVAR
-FAVAR_order <- 3
-FAVAR_factor_n <- 1
+selective1 <- FALSE      # if TRUE, then only S&W (2012) variables are taken into consideration for PCA
+FAVAR1_order <- 3
+FAVAR1_factor_n <- 1
+
+selective2 <- TRUE      # if TRUE, then only S&W (2012) variables are taken into consideration for PCA
+FAVAR2_order <- 3
+FAVAR2_factor_n <- 2
 
 
 #--------------------------------------------------------------------------
@@ -54,6 +62,13 @@ source(file = file.path(getwd(), "Code", "src_setup.R"))
 
 # Read data ---------------------------------------------------------------
 load(file = file.path(getwd(), "Results", "tidy_data", "tidy_yx_yq_stat.RData"))
+feature_info <- as_tibble(read.xlsx(file = file.path(getwd(), "Results", "table_features.xlsx"), 
+                                    sheetIndex = 1, 
+                                    startRow = 1, 
+                                    header = TRUE)) %>% 
+  mutate_if(is.factor, as.character)  %>%                                  # characters are read as factors -> convert respectively
+  mutate(MNEMONIC_FRED_CAPS = make_clean_names(MNEMONIC_FRED, 
+                                               case = "all_caps"))         # capitalize all variable names
 
 
 
@@ -105,8 +120,10 @@ trainings <- as.numeric(testing_end - training_end)#/forecasting_periods
 # Initialize empty lists
 RW_temp <- list()
 ARIMA_temp <- list()
-VAR_temp <- list()
-FAVAR_temp <- list()
+VAR1_temp <- list()
+VAR2_temp <- list()
+FAVAR1_temp <- list()
+FAVAR2_temp <- list()
 
 for (i in 1:trainings){
 
@@ -194,16 +211,16 @@ ARIMA_temp[[i]] <- tidy_yx_yq_stat %>%
 
 
 ## VAR ====================================================================
-VAR_temp[[i]] <- tidy_yx_yq_stat %>% 
+VAR1_temp[[i]] <- tidy_yx_yq_stat %>% 
   nest(.key = DATA) %>% 
-  mutate(MODEL_ID = "VAR",
+  mutate(MODEL_ID = "VAR_NK",
          TRAINING_DATA = map(DATA, ~ filter_index(., ~ training_end + (i-1)) %>% 
                                as_tibble() %>% 
-                               select(VAR_variables)),
+                               select(VAR1_variables)),
          TRAINING_END = training_end + (i-1),
          MODEL = map(TRAINING_DATA, 
                      ~ as.ts(.) %>% 
-                       VAR(., p = VAR_order, 
+                       VAR(., p = VAR1_order, 
                            type = "const")),
          FORECAST_OBJECT = map(MODEL, 
                                ~ forecast(., h = forecasting_periods, 
@@ -224,30 +241,66 @@ VAR_temp[[i]] <- tidy_yx_yq_stat %>%
          UPPER = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$upper[1:forecasting_periods])) %>% 
   select(TRAINING_END, everything())
 
+VAR2_temp[[i]] <- tidy_yx_yq_stat %>% 
+  nest(.key = DATA) %>% 
+  mutate(MODEL_ID = "VAR_LI",
+         TRAINING_DATA = map(DATA, ~ filter_index(., ~ training_end + (i-1)) %>% 
+                               as_tibble() %>% 
+                               select(VAR2_variables)),
+         TRAINING_END = training_end + (i-1),
+         MODEL = map(TRAINING_DATA, 
+                     ~ as.ts(.) %>% 
+                       VAR(., p = VAR2_order, 
+                           type = "const")),
+         FORECAST_OBJECT = map(MODEL, 
+                               ~ forecast(., h = forecasting_periods, 
+                                          level = forecasting_intervals)),
+         FORECAST_PERIOD = map(DATA, ~ yearquarter(seq(as.Date(testing_start), 
+                                                       as.Date(last_forecast), 
+                                                       by = "quarter"))),
+         PERIODS_AHEAD = map(., ~ 1:forecasting_periods),
+         TRUE_VALUE = map(DATA, ~ select(.,DATE_QUARTER, REAL_GDP_GROWTH) %>%  # extract the realized GDP growth in that period
+                            filter_index(testing_start ~ last_forecast) %>% 
+                            as_tibble(.) %>% 
+                            select(.,REAL_GDP_GROWTH) %>% 
+                            { if(nrow(.) == forecasting_periods) . else add_row(., REAL_GDP_GROWTH=rep(NA, forecasting_periods-nrow(.))) } %>%        
+                            # if forecast is in the future (i.e. there is no actual realization yet), fill with NA
+                            unlist()),
+         MEAN = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$mean[1:forecasting_periods]),
+         LOWER = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$lower[1:forecasting_periods]),
+         UPPER = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$upper[1:forecasting_periods])) %>% 
+  select(TRAINING_END, everything())
 
 
 
 ## FAVAR ==================================================================
-FAVAR_temp[[i]] <- tidy_yx_yq_stat %>% 
+FAVAR1_temp[[i]] <- tidy_yx_yq_stat %>% 
   nest(.key = DATA) %>% 
-  mutate(MODEL_ID = "FAVAR",
-         FEATURE_SPACE = map(DATA, ~ select(., -contains("REAL_GDP_GROWTH")) %>%  
+  mutate(MODEL_ID = "FAVAR_FULL",
+         FEATURE_SPACE = map(DATA, ~ filter_index(., ~ training_end + (i-1)) %>% 
                                      as_tibble() %>% 
-                                     select(-"DATE_QUARTER")),
+                                     select(-c("DATE_QUARTER", "REAL_GDP_GROWTH")) %>% 
+                                     { if(selective1)                        # compromise feature space if selective = TRUE
+                                       select(., intersect(feature_info %>% # then only take variables which have been considered in Stock and Watson's (2012) analysis ...
+                                                 filter(FACTORS==1) %>% 
+                                                 select(MNEMONIC_FRED_CAPS) %>% 
+                                                 as_vector(),
+                                                 colnames(.)))              # ... given that they have not been dropped in the data preprocessing part
+                                       else . }),
          PCA = map(FEATURE_SPACE, ~ prcomp(.,
                                            center = TRUE,  
                                            scale. = TRUE, 
-                                           rank. = FAVAR_factor_n)),
+                                           rank. = FAVAR1_factor_n)),
          PCA_SCORE = map(PCA, ~ .$x %>% 
                                 as_tibble()),
-         TRAINING_DATA = map(DATA, ~ select(., -c(colnames(FEATURE_SPACE[[1]]))) %>%                                  # drop all variables which have been considered for PCA
-                               bind_cols(PCA_SCORE) %>% 
-                               filter_index(~ training_end + (i-1)) %>% 
-                               as_tibble()),
+         TRAINING_DATA = map(DATA, ~ filter_index(., ~ training_end + (i-1)) %>% 
+                               as_tibble() %>% 
+                               select(c(DATE_QUARTER, REAL_GDP_GROWTH)) %>%      # drop all variables which have been considered for PCA
+                               bind_cols(PCA_SCORE)),
          TRAINING_END = training_end + (i-1),
          MODEL = map(TRAINING_DATA, 
                      ~ as.ts(.) %>% 
-                       VAR(., p = FAVAR_order, 
+                       VAR(., p = FAVAR1_order, 
                            type = "const")),
          FORECAST_OBJECT = map(MODEL, 
                                ~ forecast(., h = forecasting_periods, 
@@ -268,6 +321,56 @@ FAVAR_temp[[i]] <- tidy_yx_yq_stat %>%
          UPPER = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$upper[1:forecasting_periods])) %>% 
   select(TRAINING_END, everything())
 
+
+FAVAR2_temp[[i]] <- tidy_yx_yq_stat %>% 
+  nest(.key = DATA) %>% 
+  mutate(MODEL_ID = "FAVAR_SW",
+         FEATURE_SPACE = map(DATA, ~ filter_index(., ~ training_end + (i-1)) %>% 
+                               as_tibble() %>% 
+                               select(-c("DATE_QUARTER", "REAL_GDP_GROWTH")) %>% 
+                               { if(selective2)                        # compromise feature space if selective = TRUE
+                                 select(., intersect(feature_info %>% # then only take variables which have been considered in Stock and Watson's (2012) analysis ...
+                                                       filter(FACTORS==1) %>% 
+                                                       select(MNEMONIC_FRED_CAPS) %>% 
+                                                       as_vector(),
+                                                     colnames(.)))              # ... given that they have not been dropped in the data preprocessing part
+                                 else . }),
+         PCA = map(FEATURE_SPACE, ~ prcomp(.,
+                                           center = TRUE,  
+                                           scale. = TRUE, 
+                                           rank. = FAVAR2_factor_n)),
+         PCA_SCORE = map(PCA, ~ .$x %>% 
+                           as_tibble()),
+         TRAINING_DATA = map(DATA, ~ filter_index(., ~ training_end + (i-1)) %>% 
+                               as_tibble() %>% 
+                               select(c(DATE_QUARTER, REAL_GDP_GROWTH)) %>%      # drop all variables which have been considered for PCA
+                               bind_cols(PCA_SCORE)),
+         TRAINING_END = training_end + (i-1),
+         MODEL = map(TRAINING_DATA, 
+                     ~ as.ts(.) %>% 
+                       VAR(., p = FAVAR2_order, 
+                           type = "const")),
+         FORECAST_OBJECT = map(MODEL, 
+                               ~ forecast(., h = forecasting_periods, 
+                                          level = forecasting_intervals)),
+         FORECAST_PERIOD = map(DATA, ~ yearquarter(seq(as.Date(testing_start), 
+                                                       as.Date(last_forecast), 
+                                                       by = "quarter"))),
+         PERIODS_AHEAD = map(., ~ 1:forecasting_periods),
+         TRUE_VALUE = map(DATA, ~ select(.,DATE_QUARTER, REAL_GDP_GROWTH) %>%  # extract the realized GDP growth in that period
+                            filter_index(testing_start ~ last_forecast) %>% 
+                            as_tibble(.) %>% 
+                            select(.,REAL_GDP_GROWTH) %>% 
+                            { if(nrow(.) == forecasting_periods) . else add_row(., REAL_GDP_GROWTH=rep(NA, forecasting_periods-nrow(.))) } %>%        
+                            # if forecast is in the future (i.e. there is no actual realization yet), fill with NA
+                            unlist()),
+         MEAN = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$mean[1:forecasting_periods]),
+         LOWER = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$lower[1:forecasting_periods]),
+         UPPER = map(FORECAST_OBJECT, ~ .$forecast$REAL_GDP_GROWTH$upper[1:forecasting_periods])) %>% 
+  select(TRAINING_END, everything())
+
+
+print(i)
 }
 
 
@@ -278,30 +381,41 @@ RW_model <- RW_temp %>%
 ARIMA_model <- ARIMA_temp %>%
   bind_rows() %>% 
   mutate(TRAINING_END = yearquarter(TRAINING_END))
-VAR_model <- VAR_temp %>%
+VAR1_model <- VAR1_temp %>%
   bind_rows() %>% 
   mutate(TRAINING_END = yearquarter(TRAINING_END))
-FAVAR_model <- FAVAR_temp %>% 
+VAR2_model <- VAR2_temp %>%
+  bind_rows() %>% 
+  mutate(TRAINING_END = yearquarter(TRAINING_END))
+FAVAR1_model <- FAVAR1_temp %>% 
+  bind_rows() %>% 
+  mutate(TRAINING_END = yearquarter(TRAINING_END))
+FAVAR2_model <- FAVAR2_temp %>% 
   bind_rows() %>% 
   mutate(TRAINING_END = yearquarter(TRAINING_END))
 
 
 # Extract forecast error of RW model for relative error measures
 rw_error <- RW_model %>% 
-  select(PERIODS_AHEAD, MEAN) %>% 
+  select(PERIODS_AHEAD, TRUE_VALUE, MEAN) %>% 
   as_tibble() %>% 
   unnest() %>% 
+  mutate(ERROR=TRUE_VALUE-MEAN) %>% 
   filter(PERIODS_AHEAD == forecasting_periods) %>% 
-  select(MEAN)
+  select(ERROR)
 
 
 # Unnest results and calculate error measures
 forecasting_models <- ARIMA_model %>% 
-  bind_rows(VAR_model) %>% 
+  bind_rows(VAR1_model) %>% 
+  bind_rows(VAR2_model) %>% 
   bind_rows(RW_model) %>% 
-  bind_rows(FAVAR_model %>% select(-c(FEATURE_SPACE,
+  bind_rows(FAVAR1_model %>% select(-c(FEATURE_SPACE,
                                    PCA,
                                    PCA_SCORE))) %>% 
+  bind_rows(FAVAR2_model %>% select(-c(FEATURE_SPACE,
+                                      PCA,
+                                      PCA_SCORE))) %>% 
   select(MODEL_ID, TRAINING_END, PERIODS_AHEAD, FORECAST_PERIOD, 
          TRUE_VALUE, MEAN, LOWER, UPPER) %>% 
   as_tibble() %>% 
@@ -310,7 +424,7 @@ forecasting_models <- ARIMA_model %>%
   mutate(TRAINING_END = yearquarter(TRAINING_END),
          FORECAST_PERIOD = yearquarter(FORECAST_PERIOD),
          ERROR = TRUE_VALUE - MEAN,
-         REL_ERROR = MEAN/as_vector(rw_error))
+         REL_ERROR = ERROR/as_vector(rw_error))
 
 
 
@@ -319,7 +433,9 @@ forecasting_models %>%
   group_by(MODEL_ID) %>%             
   summarise(MSE = mean(ERROR^2),                                           # calculate mean squared error (MSE)
             RMSE = sqrt(mean(ERROR^2)),                                    # calculate root mean squared error (RMSE)
-            MdRAE = median(abs(REL_ERROR))) %>%                            # calculate Median Relative Absolute Error (MdRAE)
+            MdRAE = median(abs(REL_ERROR)),                                # calculate Median Relative Absolute Error (MdRAE)
+            MdAE = median(abs(ERROR)),
+            MAE = mean(abs(ERROR))) %>%                            
   ungroup() %>%  
   mutate(RelRMSE = RMSE/(.[.$MODEL_ID=="RW", "RMSE"] %>% pull()))          # calculate relative RMSE (RelRMSE); for this purpose extract RMSE for Random Walk and pull it as numeric value from the tibble
 

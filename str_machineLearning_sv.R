@@ -8,7 +8,7 @@ finetuning_sv <- FALSE
 
 # First-stage tuning setup
 npar_sv <- 3           # number of tuning parameters
-tuning_factor <- 100  # modifiable tuning factor for SVR as results highly sensitive to tuning
+tuning_factor <- 100   # modifiable tuning factor for SVR as results are highly sensitive to tuning
 
 # Finetuning setup
 # Name of tuning parameters
@@ -17,11 +17,13 @@ epsilon_sv <- "epsilon"
 
 # Final kernel & search space boundaries
 kern <- "sigmoid"
-cost_low <- 0.1
-cost_up <- 0.5
-epsilon_low <- 0.1
-epsilon_up <- 0.7
-gamma_fix <- 0.027
+cost_low <- 0.06
+cost_up <- 0.36
+epsilon_low <- 0.0002
+epsilon_up <- 0.068
+#d_low <- 1
+#d_up <- 10
+gamma_fix <- 1/ncol(data_training)
 
 # Final learner
 learner_sv <- makeLearner(cl = "regr.svm", 
@@ -29,7 +31,7 @@ learner_sv <- makeLearner(cl = "regr.svm",
                           predict.type = "response",
                           type = "eps-regression",                         # epsilon-insensitive loss function
                           gamma = gamma_fix,                               # kernel parameter (comment this line if the parameter shall be tuned)
-                          degree = 3,                                      # kernel parameter for polynomial kernel only (default value = 3; comment this line if the parameter shall be tuned)
+                          #degree = 3,                                      # kernel parameter for polynomial kernel only (default value = 3; comment this line if the parameter shall be tuned)
                           coef0 = 0,                                       # kernel parameter (default value = 0; comment this line if the parameter shall be tuned)
                           fitted = FALSE)
 
@@ -54,7 +56,13 @@ learner_sv.svm <- makeLearner(cl = "regr.svm",
                               gamma = 1/ncol(data_training),              # kernel parameter (comment this line if the parameter shall be tuned)
                               degree = 3,                                 # kernel parameter for polynomial kernel only (default value = 3; comment this line if the parameter shall be tuned)
                               coef0 = 0,                                  # kernel parameter (default value = 0; comment this line if the parameter shall be tuned)
-                              fitted = FALSE)                             # not sure yet whether this is a good idea
+                              fitted = FALSE,                             # not sure yet whether this is a good idea
+                              scale = TRUE)                               # scale features before feeding into model                              
+
+# learner_sv.svm <- makePreprocWrapperCaret(learner_sv.svm, 
+#                                           ppc.center = TRUE,              # centers the features
+#                                           ppc.scale = TRUE                # scales the features
+#                                           )
 
 learner_sv.ksvm <- makeLearner(cl = "regr.ksvm", 
                               id = "ksvm", 
@@ -108,8 +116,8 @@ getParamSet("regr.ksvm")
 
 tuning_ps_sv.svm <- makeParamSet(
   makeDiscreteLearnerParam("kernel", 
-                           values = c("polynomial", "radial", "sigmoid"), # define different kernels to use in SVR
-                           #values = c("sigmoid"),                         # if only sigmoid
+                           #values = c("polynomial", "radial", "sigmoid"), # define different kernels to use in SVR
+                           values = c("sigmoid"),                         # if only sigmoid
                            #default = "sigmoid"
                            ),
   # makeNumericParam("coef0",                                             # define tuning parameter for the polynomial degree for polynomial kernel
@@ -124,14 +132,14 @@ tuning_ps_sv.svm <- makeParamSet(
   #                  requires = quote(kernel == "polynomial")),
   # makeNumericParam("gamma",                                               # General remark: in radial kernel gamma reflects how far the influence of a single training example reaches, with low values meaning 'far' and high values meaning 'close'. The gamma parameters can be seen as the inverse of the radius of influence of samples selected by the model as support vectors.
   #                  lower = 1/ncol(data_training),                         # gamma should capture the the inverse dimension of the input space. A good starting point could be 1/0.1*dimension
-  #                  upper = 10*1/ncol(data_training),                      # upper limit of gamma could the inverse of the dimension itself (1/dim)
+  #                  upper = 1000*1/ncol(data_training),                      # upper limit of gamma could the inverse of the dimension itself (1/dim)
   #                  trafo = function(x) x),
   makeNumericParam("cost", 
-                   lower = -3,                                            # as recommended in package documentation (consider transformation function)
-                   upper = -1,                                             # as recommended in package documentation (consider transformation function)
+                   lower = -2,                                            # as recommended in package documentation (consider transformation function)
+                   upper = 4,                                             # as recommended in package documentation (consider transformation function)
                    trafo = function(x) 10^x),
   makeNumericParam("epsilon", 
-                   lower = -3,                                            # as recommended in package documentation (consider transformation function)
+                   lower = -5,                                            # as recommended in package documentation (consider transformation function)
                    upper = 0,                                             # as recommended in package documentation (consider transformation function)
                    trafo = function(x) 10^x)
 )
@@ -198,6 +206,7 @@ tuning_results_sv.svm <- tuneParams(learner = learner_sv.svm,
                                     resampling = cv_tuning,
                                     par.set = tuning_ps_sv.svm, 
                                     control = tuning_control, 
+                                    measures = rmse,
                                     show.info = TRUE)
 
 # set.seed(333)
@@ -206,6 +215,7 @@ tuning_results_sv.svm <- tuneParams(learner = learner_sv.svm,
 #                                      resampling = cv_tuning,
 #                                      par.set = tuning_ps_sv.ksvm,
 #                                      control = tuning_control,
+#                                      measures = rmse,
 #                                      show.info = TRUE)
 
 ## Performance estimation =================================================
@@ -245,7 +255,7 @@ set.seed(333)
 performance_benchmark_sv <- benchmark(learners = learner_list,
                                       tasks = task_overall,
                                       resamplings = cv_test,
-                                      measures = rmse,
+                                      measures = list(rmse,medaeTestMedian),
                                       keep.pred = TRUE,
                                       keep.extract = TRUE,
                                       show.info = TRUE)
@@ -292,12 +302,16 @@ tuning_ps_sv <- makeParamSet(
   makeNumericParam("epsilon", 
                    lower = epsilon_low,                                   
                    upper = epsilon_up,                                    
-                   trafo = function(x) x)
+                   trafo = function(x) x)#,
+  # makeNumericParam("degree", 
+  #                  lower = d_low,                                      
+  #                  upper = d_up,                                       
+  #                  trafo = function(x) round(x))
 )
 ### Define optimization algorithm #########################################
 # Grid search is applied in this thesis
-tuning_control <- makeTuneControlGrid(resolution = tuning_resolution)     # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
-
+tuning_control <- makeTuneControlGrid(resolution = c(cost = 11, epsilon = 11))      # resolution picks tuning_resolution equally distanced parameter values from the continuous parameter space above
+tuning_control <- makeTuneControlRandom(maxit = tuning_factor*npar_sv)     # random search
 
 ### Tuning results ########################################################
 parallelMap::parallelStartSocket(cpus = 4, 
@@ -308,7 +322,8 @@ finetuning_results_sv <- tuneParams(learner = learner_sv,
                                     task = task_training,
                                     resampling = cv_tuning,
                                     par.set = tuning_ps_sv, 
-                                    control = tuning_control, 
+                                    control = tuning_control,
+                                    measures = rmse,
                                     show.info = TRUE)
 
 ## Performance estimation =================================================
@@ -322,8 +337,9 @@ finetuning_results_sv <- tuneParams(learner = learner_sv,
 learner_tuned_sv <- setHyperPars(learner = learner_sv,
                                      kernel = finetuning_results_sv$x[[1]],
                                      cost = finetuning_results_sv$x[[2]],
-                                     epsilon = finetuning_results_sv.$x[[3]]#,
-                                     #gamma = finetuning_results_sv.svm$x$gamma
+                                     epsilon = finetuning_results_sv$x[[3]]#,
+                                     #gamma = finetuning_results_sv$x$gamma
+                                     #degree = finetuning_results_sv$x$degree
                                      )
 
 
@@ -334,9 +350,10 @@ set.seed(333)
 performance_results_sv <- resample(learner = learner_tuned_sv,
                                    task = task_overall,
                                    resampling = cv_test,
-                                   measures = rmse,
+                                   measures = list(rmse,medaeTestMedian),
                                    keep.pred = TRUE,
-                                   show.info = TRUE)
+                                   show.info = TRUE,
+                                   models = TRUE)
 
 parallelMap::parallelStop()
 

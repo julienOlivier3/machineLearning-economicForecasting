@@ -459,3 +459,52 @@ function_pcr_cv <- function(data_training,                                      
   } 
   return(FAVAR_results_cv)
 } 
+## Spread multiple columns function ---------------------------------------
+spread_n <- function(df, key, value) {
+  # quote key
+  keyq <- rlang::enquo(key)
+  # break value vector into quotes
+  valueq <- rlang::enquo(value)
+  s <- rlang::quos(!!valueq)
+  df %>% gather(variable, value, !!!s) %>%
+    unite(temp, !!keyq, variable) %>%
+    spread(temp, value)
+}
+
+
+## Extract results from resample object -----------------------------------
+
+
+help_function <- function(df, id_name, flag_se, horizon){
+  df<-df
+  df %>%
+    .$pred %>%
+    .$data %>%
+    as_tibble() %>% 
+    filter(set == "test") %>% 
+    rename(TRUE_VALUE=truth,
+           MEAN=response) %>% 
+    { if(flag_se)
+      mutate(.,LOWER=MEAN-se,
+             UPPER=MEAN+se)
+      else 
+        mutate(.,LOWER=NA,
+               UPPER=NA)
+    } %>%
+    { if(horizon == "Q")
+      mutate(.,PERIODS_AHEAD = 1)
+      else 
+        mutate(.,PERIODS_AHEAD = 4)
+    } %>%
+    { if(horizon == "Q")
+      mutate(.,TRAINING_END=unique(ECO_Q$TRAINING_END),
+             FORECAST_PERIOD=unique(ECO_Q$FORECAST_PERIOD))
+      else 
+        mutate(.,TRAINING_END=unique(ECO_Y$TRAINING_END),
+               FORECAST_PERIOD=unique(ECO_Y$FORECAST_PERIOD))
+    } %>%
+    mutate(.,MODEL_ID=id_name,
+           ERROR=TRUE_VALUE-MEAN
+    ) %>% 
+    select(c(colnames(ECO_Q)))
+}

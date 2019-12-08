@@ -7,32 +7,44 @@ benchmarking_rf <- TRUE
 finetuning_rf <- FALSE
 
 # First-stage tuning setup
-npar_rf <- 3      # Number of tuning parameters
+npar_rf <- 3         # Number of tuning parameters
+mtry_factor <- 0.1     # how much percent of overall features shall be at least considered as splitting variables 
+                     # (if = 1, then mtry is fix and all features are considered as possible splitters)
 
 # Finetuning setup
 # Final learner
 learner_rf <- makeLearner(cl = "regr.randomForest",                   
                           id = "randomForest",                        
-                          predict.type = "se",                            # special prediction in regression tasks (mean response AND standard errors)
+                          predict.type = "se",                           # special prediction in regression tasks (mean response AND standard errors)
                           #maxnodes = NULL,                               # maximum number of terminal nodes trees in the forest can have. This parameter is ignored. Steering of tree size via nodesize.
-                          replace = FALSE,                                # no replacement of observations in training set (not valid for time series). Note: Argument sampsize defines the size(s) of sample to draw, default is .632 times the sample size.
+                          replace = FALSE,                               # no replacement of observations in training set (not valid for time series). Note: Argument sampsize defines the size(s) of sample to draw, default is .632 times the sample size.
                           #sampsize = 1,                                  # all observations in training data are used for training (i.e. no bootstrapping any more)
-                          #na.action = na.omit,                           # omit observations with missings (but data is balanced anyway, imputation takes place beforehand)
-                          importance = TRUE                               # return the variable importance measures (for randomForest::randomForest there are two vim measures: 1) mean decrease inaccuracy, 2) mean decrease in node impurity (see package description for more details)
-                          )                           
+                          #na.action = na.omit                           # omit observations with missings (but data is balanced anyway, imputation takes place beforehand)
+                          importance = TRUE
+)                         
+
+learner_rf  <- makeLearner(cl = "regr.ranger",                   
+                           id = "ranger",                        
+                           predict.type = "se",
+                           #max.depth = NULL,                          # maximal tree depth. This parameter is ignored. Steering of tree size via min.node.size.
+                           replace = FALSE,                           # no replacement of observations in training set (not valid for time series). Note: Argument sample.fraction is the fraction of observations to sample. Default is 1 for sampling with replacement and 0.632 for sampling without replacement.
+                           #sample.fraction = 1                       # all observations in training data are used for training (i.e. no bootstrapping any more)
+                           importance = "impurity"
+                           )
+
 
 # Name of tuning parameters
-ntree_rf <- "ntree" 
+ntree_rf <- "num.trees" 
 mtry_rf <- "mtry"
-nodesize_rf <- "nodesize"
+nodesize_rf <- "min.node.size"
 
 # Search space boundaries
-ntree_low <- 250
-ntree_up <- 750
-mtry_low <- 100
-mtry_up <- 200
-nodesize_low <- 70
-nodesize_up <- 80
+ntree_low <- 90
+ntree_up <- 90
+mtry_low <- 183
+mtry_up <- 183
+nodesize_low <- 95
+nodesize_up <- 95
 
 #--------------------------------------------------------------------------
 
@@ -73,7 +85,7 @@ learner_rf.ranger <- makeLearner(cl = "regr.ranger",
                                  #sample.fraction = 1                       # all observations in training data are used for training (i.e. no bootstrapping any more)
                                 )
 # Notes:
-# - for the result assessment later argument importance needs to adjusted accordingly
+# - for the result assessment later argument importance needs to adjusted accordingly (actually not as only the final model is used for variable importance assessment)
 # - for randomForestSRC implementation there is an argument called nsplit which defines 
 #   the number of random splits to consider for each candidate splitting variable (default = 10).
 #   Is there a similar argument for the other implementations?
@@ -114,15 +126,15 @@ getParamSet("regr.ranger")
 tuning_ps_rf.rf <- makeParamSet(
   makeNumericParam("ntree",                                                # define tuning parameter
                    lower = 10,                                             # lower value of continuous parameter space
-                   upper = 500,                                            # upper value of parameter space
+                   upper = 1000,                                            # upper value of parameter space
                    trafo = function(x) ceiling(x)),                        # function applied to parameter values (here ceiling to assure that parameters are integers)
-  makeNumericParam("mtry", 
-                   lower = floor(ncol(data_training)*0.1),                 # fraction of possible feature is rounded down
+  makeNumericParam("mtry",
+                   lower = floor((ncol(data_training)-1)*mtry_factor),     # fraction of possible feature is rounded down
                    upper = ncol(data_training)-1,                          # maximum number is the number of columns of training data less the target variable
                    trafo = function(x) ceiling(x)),
   makeNumericParam("nodesize", 
                    lower = 1,                                              # lower bound for minim node size
-                   upper = floor(nrow(data_training))/2,                   # upper bound of minimum node size is set to half of the observations (possibly resulting in stumps)
+                   upper = floor(nrow(data_training)/2),                   # upper bound of minimum node size is set to half of the observations (possibly resulting in stumps)
                    trafo = function(x) ceiling(x))
 )
 
@@ -131,15 +143,15 @@ tuning_ps_rf.rfSRC <- tuning_ps_rf.rf
 tuning_ps_rf.ranger <- makeParamSet(
   makeNumericParam("num.trees",                                            # define tuning parameter
                    lower = 10,                                             # lower value of continuous parameter space
-                   upper = 500,                                            # upper value of parameter space
+                   upper = 1000,                                            # upper value of parameter space
                    trafo = function(x) ceiling(x)),                        # function applied to parameter values (here ceiling to assure that parameters are integers)
-  makeNumericParam("mtry", 
-                   lower = floor(ncol(data_training)*0.1), 
-                   upper = ncol(data_training)-1, 
+  makeNumericParam("mtry",
+                   lower = floor((ncol(data_training)-1)*mtry_factor),     # fraction of possible feature is rounded down
+                   upper = ncol(data_training)-1,
                    trafo = function(x) ceiling(x)),
   makeNumericParam("min.node.size", 
                    lower = 1,                                              # lower bound for minim node size
-                   upper = floor(nrow(data_training))/2,                   # upper bound of minimum node size is set to half of the observations (possibly resulting in stumps)
+                   upper = floor(nrow(data_training)/2),                   # upper bound of minimum node size is set to half of the observations (possibly resulting in stumps)
                    trafo = function(x) ceiling(x))
 )
 
@@ -165,7 +177,8 @@ tuning_results_rf.rf <- tuneParams(learner = learner_rf.rf,
                                    task = task_training,
                                    resampling = cv_tuning,
                                    par.set = tuning_ps_rf.rf, 
-                                   control = tuning_control, 
+                                   control = tuning_control,
+                                   measures = rmse,
                                    show.info = TRUE)
 
 set.seed(333)
@@ -174,6 +187,7 @@ tuning_results_rf.rfSRC <- tuneParams(learner = learner_rf.rfSRC,
                                       resampling = cv_tuning,
                                       par.set = tuning_ps_rf.rfSRC, 
                                       control = tuning_control, 
+                                      measures = rmse,
                                       show.info = TRUE)
 
 set.seed(333)
@@ -182,6 +196,7 @@ tuning_results_rf.ranger <- tuneParams(learner = learner_rf.ranger,
                                        resampling = cv_tuning,
                                        par.set = tuning_ps_rf.ranger, 
                                        control = tuning_control, 
+                                       measures = rmse,
                                        show.info = TRUE)
 
 ## Performance estimation =================================================
@@ -217,7 +232,7 @@ set.seed(333)
 performance_benchmark_rf <- benchmark(learners = learner_list, 
                                       tasks = task_overall, 
                                       resamplings = cv_test, 
-                                      measures = rmse,
+                                      measures = list(rmse,medaeTestMedian),
                                       keep.pred = TRUE, 
                                       keep.extract = TRUE, 
                                       show.info = TRUE)
@@ -289,13 +304,17 @@ tuning_control <- makeTuneControlGrid(resolution = tuning_resolution)      # res
 parallelMap::parallelStartSocket(cpus = 4, 
                                  show.info = TRUE)
 
-set.seed(333)
+if(tuning){
+  set.seed(333)
 finetuning_results_rf <- tuneParams(learner = learner_rf,
                                     task = task_training,
                                     resampling = cv_tuning,
                                     par.set = tuning_ps_rf, 
                                     control = tuning_control, 
+                                    measures = rmse,
                                     show.info = TRUE)
+}
+
 
 ## Performance estimation =================================================
 # Outer loop of nested resampling
@@ -304,13 +323,18 @@ finetuning_results_rf <- tuneParams(learner = learner_rf,
 
 
 ### Redefine learner given optimal parameters #############################
-
-learner_tuned_rf <- setHyperPars(learner = learner_rf,
-                                 ntree = finetuning_results_rf$x[[1]],
+if(tuning){
+ learner_tuned_rf <- setHyperPars(learner = learner_rf,
+                                 num.trees = finetuning_results_rf$x[[1]],
                                  mtry = finetuning_results_rf$x[[2]],
-                                 nodesize = finetuning_results_rf$x[[3]])
-
-
+                                 min.node.size = finetuning_results_rf$x[[3]]) 
+}
+else{
+learner_tuned_rf <- setHyperPars(learner = learner_rf,
+                                 num.trees = ntree_low,
+                                 mtry = mtry_low,
+                                 min.node.size = nodesize_low)
+}
 ### Performance results ###################################################
 
 
@@ -318,7 +342,7 @@ set.seed(333)
 performance_results_rf <- resample(learner = learner_tuned_rf,
                                    task = task_overall,
                                    resampling = cv_test,
-                                   measures = rmse,
+                                   measures = list(rmse,medaeTestMedian),
                                    keep.pred = TRUE,
                                    show.info = TRUE, 
                                    models = TRUE)                          # return all fitted models (required for later assessment of model importance)

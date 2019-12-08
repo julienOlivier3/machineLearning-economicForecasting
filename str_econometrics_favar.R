@@ -127,54 +127,54 @@ corr_matrix <- cor(data_training %>% select(-c(DATE_QUARTER, REAL_GDP_GROWTH)))
 corr_p <- cor_pmat(corr_matrix)
 
 # Create correlation plot (ggplot style)
-corr_plot <- ggcorrplot(corr = corr_matrix, 
-           method = "square", 
-           type = "lower", 
-           ggtheme = theme_thesis, 
-           title = "", 
-           show.legend = TRUE, 
-           legend.title = "Corr", 
-           show.diag = TRUE, 
-           p.mat = corr_p,
-           colors = c(bb_green_dark, "white", bb_red_dark),
-           insig = "pch", 
-           pch = 4, 
-           pch.col = "darkgrey",
-           pch.cex = 1,
-           hc.order = FALSE) +                                           # this keeps order of variables in the plot 
-  theme(axis.text.x = element_text(color = "black", size = 5),
-        axis.text.y = element_text(color = "black", size = 5)) 
+# corr_plot <- ggcorrplot(corr = corr_matrix, 
+#            method = "square", 
+#            type = "lower", 
+#            ggtheme = theme_thesis, 
+#            title = "", 
+#            show.legend = TRUE, 
+#            legend.title = "Corr", 
+#            show.diag = TRUE, 
+#            p.mat = corr_p,
+#            colors = c(bb_green_dark, "white", bb_red_dark),
+#            insig = "pch", 
+#            pch = 4, 
+#            pch.col = "darkgrey",
+#            pch.cex = 1,
+#            hc.order = FALSE) +                                           # this keeps order of variables in the plot 
+#   theme(axis.text.x = element_text(color = "black", size = 5),
+#         axis.text.y = element_text(color = "black", size = 5)) 
 
 # Add labels and lines to correlation plot
-corr_plot +
-  annotate("segment", x=rep(-30, length(id)), y=id+0.5, xend=id+0.5, yend=id+0.5,
-           col="black") +
-  annotate("segment", x=id+0.5, y=id+0.5, xend=dim(corr_matrix)[1], yend=id+0.5,
-           col="black", lty=2) +
-  annotate("segment", x=id+0.5, y=rep(0, length(id)), xend=id+0.5, yend=id+0.5,
-           col="black") +
-  annotate("text", x=rep(-29, length(id)), y=id2,
-           label=id_label, size = 2, hjust = "left",
-           fontface = "bold") +
-  coord_fixed(ratio = 1, xlim = c(1,dim(corr_matrix)[1]), ylim = c(1,dim(corr_matrix)[1]), expand = TRUE,
-              clip = "off") 
+# corr_plot +
+#   annotate("segment", x=rep(-30, length(id)), y=id+0.5, xend=id+0.5, yend=id+0.5,
+#            col="black") +
+#   annotate("segment", x=id+0.5, y=id+0.5, xend=dim(corr_matrix)[1], yend=id+0.5,
+#            col="black", lty=2) +
+#   annotate("segment", x=id+0.5, y=rep(0, length(id)), xend=id+0.5, yend=id+0.5,
+#            col="black") +
+#   annotate("text", x=rep(-29, length(id)), y=id2,
+#            label=id_label, size = 2, hjust = "left",
+#            fontface = "bold") +
+#   coord_fixed(ratio = 1, xlim = c(1,dim(corr_matrix)[1]), ylim = c(1,dim(corr_matrix)[1]), expand = TRUE,
+#               clip = "off") 
 
 # Create correlation plot (nice style)
-corrplot(corr_matrix,
-         method = "square", 
-         type = "lower",
-         order = "FPC", 
-         tl.pos	= "ld",
-         tl.col = "black", 
-         tl.cex = 0.4,
-         tl.srt = 45,
-         p.mat = corr_p, 
-         sig.level = 0.05, 
-         insig = "pch", 
-         pch = "X",
-         pch.cex = 0.5#, 
-         #col = c(bb_green_dark, "white", bb_red_dark)
-         )
+# corrplot(corr_matrix,
+#          method = "square", 
+#          type = "lower",
+#          order = "FPC", 
+#          tl.pos	= "ld",
+#          tl.col = "black", 
+#          tl.cex = 0.4,
+#          tl.srt = 45,
+#          p.mat = corr_p, 
+#          sig.level = 0.05, 
+#          insig = "pch", 
+#          pch = "X",
+#          pch.cex = 0.5#, 
+#          #col = c(bb_green_dark, "white", bb_red_dark)
+#          )
 
 
 
@@ -261,126 +261,126 @@ data_FAVAR <- data_training %>%
 
 ## Visualize loadings =====================================================
 # Visualizations via R^2
-pca_loadings_relevant <- pca_loadings %>% 
-  mutate(VARIABLE = factor(VARIABLE, levels = VARIABLE)) %>% 
-  select(1:(factor_n+1)) %>% 
-  melt(value.name = "LOADING") %>% 
-  as_tibble() %>% 
-  rename(PC=variable)
-
-pca_loadings_plot1 <- pca_loadings_relevant %>% 
-  filter(PC == "PC1") %>% 
-  ggplot()+
-  geom_bar(aes(x = VARIABLE, y = LOADING), stat = "identity") +
-  theme_thesis +
-  theme(axis.text.x = element_text(angle = 90, 
-                                   hjust = 1,
-                                   vjust= 0.25,
-                                   size = 5),
-        plot.margin=unit(c(1,1,4,1.2),"cm"),
-        panel.grid.major.x = element_line(color = "grey90", size = 0.5),
-        axis.title.x = element_blank()) +
-  annotate("segment", x=id+0.5, y=rep(-0.45, length(id)), xend=id+0.5, yend=rep(-0.23, length(id)),
-           col="black") +
-  annotate("text", x=id2, y=rep(-0.44, length(id)),
-          label=id_label, size = 2, hjust = "bottom",
-          fontface = "bold", angle = 90) +
-  coord_cartesian(xlim = c(0,dim(pca_loadings)[1]), 
-                  ylim = c(min(pca_loadings %>% select(2:factor_n)),
-                           max(pca_loadings %>% select(2:factor_n))), 
-                  expand = TRUE, 
-                  clip = "off")
-
-pca_loadings_plot2 <- pca_loadings_relevant %>% 
-  filter(PC == "PC2") %>% 
-  ggplot()+
-  geom_bar(aes(x = VARIABLE, y = LOADING), stat = "identity") +
-  theme_thesis +
-  theme(axis.text.x = element_text(angle = 90, 
-                                   hjust = 1,
-                                   vjust= 0.25,
-                                   size = 5),
-        plot.margin=unit(c(1,1,4,1.2),"cm"),
-        panel.grid.major.x = element_line(color = "grey90", size = 0.5),
-        axis.title.x = element_blank()) +
-  annotate("segment", x=id+0.5, y=rep(-0.45, length(id)), xend=id+0.5, yend=rep(-0.23, length(id)),
-           col="black") +
-  annotate("text", x=id2, y=rep(-0.44, length(id)),
-           label=id_label, size = 2, hjust = "bottom",
-           fontface = "bold", angle = 90) +
-  coord_cartesian(xlim = c(0,dim(pca_loadings)[1]), 
-                  ylim = c(min(pca_loadings %>% select(2:factor_n)),
-                           max(pca_loadings %>% select(2:factor_n))), 
-                  expand = TRUE, 
-                  clip = "off")
-
-grid.arrange(pca_loadings_plot1,
-             pca_loadings_plot2,
-             nrow=2)
-
-
-# Visualizations via R^2
-data_R2 <- pca_scores %>% 
-  select(1:factor_n) %>% 
-  bind_cols(feature_space)
-
-data_R2_PC1 <- tibble("VARIABLE" = colnames(feature_space)) %>% 
-  mutate(DATA = map(VARIABLE, function(x) data_R2[,c("PC1",x)]),
-         LM = map(DATA, function(x) lm(PC1~., data = x)),
-         R2 = map(LM, function(x) summary(x)$r.squared)) %>% 
-  select(VARIABLE, R2) %>% 
-  unnest()
-
-data_R2_PC1 %>% 
-  ggplot()+
-  geom_bar(aes(x = VARIABLE, y = R2), stat = "identity") +
-  theme_thesis +
-  theme(axis.text.x = element_text(angle = 90, 
-                                   hjust = 1,
-                                   vjust= 0.25,
-                                   size = 5),
-        plot.margin=unit(c(1,1,4,1.2),"cm"),
-        panel.grid.major.x = element_line(color = "grey90", size = 0.5),
-        axis.title.x = element_blank()) +
-  annotate("segment", x=id+0.5, y=rep(-0.5, length(id)), xend=id+0.5, yend=rep(0.8, length(id)),
-           col="black") +
-  annotate("text", x=id2, y=rep(-0.49, length(id)),
-           label=id_label, size = 2, hjust = "bottom",
-           fontface = "bold", angle = 90) +
-  coord_cartesian(xlim = c(0,dim(data_R2_PC1)[1]), 
-                  ylim = c(min(data_R2_PC1 %>% select(R2)),
-                           max(data_R2_PC1 %>% select(R2))), 
-                  expand = TRUE, 
-                  clip = "off")
-
-data_R2_PC2 <- tibble("VARIABLE" = colnames(feature_space)) %>% 
-  mutate(DATA = map(VARIABLE, function(x) data_R2[,c("PC2",x)]),
-         LM = map(DATA, function(x) lm(PC2~., data = x)),
-         R2 = map(LM, function(x) summary(x)$r.squared)) %>% 
-  select(VARIABLE, R2) %>% 
-  unnest()
-
-data_R2_PC2 %>% 
-  ggplot()+
-  geom_bar(aes(x = VARIABLE, y = R2), stat = "identity") +
-  theme_thesis +
-  theme(axis.text.x = element_text(angle = 90, 
-                                   hjust = 1,
-                                   vjust= 0.25,
-                                   size = 5),
-        plot.margin=unit(c(1,1,4,1.2),"cm"),
-        panel.grid.major.x = element_line(color = "grey90", size = 0.5),
-        axis.title.x = element_blank()) +
-  annotate("segment", x=id+0.5, y=rep(-0.2, length(id)), xend=id+0.5, yend=rep(0.35, length(id)),
-           col="black") +
-  annotate("text", x=id2, y=rep(-0.19, length(id)),
-           label=id_label, size = 2, hjust = "bottom",
-           fontface = "bold", angle = 90) +
-  coord_cartesian(xlim = c(0,dim(data_R2_PC1)[1]), 
-                  ylim = c(min(data_R2_PC2 %>% select(R2)),
-                           max(data_R2_PC2 %>% select(R2))), 
-                  expand = TRUE, 
-                  clip = "off")
+# pca_loadings_relevant <- pca_loadings %>% 
+#   mutate(VARIABLE = factor(VARIABLE, levels = VARIABLE)) %>% 
+#   select(1:(factor_n+1)) %>% 
+#   melt(value.name = "LOADING") %>% 
+#   as_tibble() %>% 
+#   rename(PC=variable)
+# 
+# pca_loadings_plot1 <- pca_loadings_relevant %>% 
+#   filter(PC == "PC1") %>% 
+#   ggplot()+
+#   geom_bar(aes(x = VARIABLE, y = LOADING), stat = "identity") +
+#   theme_thesis +
+#   theme(axis.text.x = element_text(angle = 90, 
+#                                    hjust = 1,
+#                                    vjust= 0.25,
+#                                    size = 5),
+#         plot.margin=unit(c(1,1,4,1.2),"cm"),
+#         panel.grid.major.x = element_line(color = "grey90", size = 0.5),
+#         axis.title.x = element_blank()) +
+#   annotate("segment", x=id+0.5, y=rep(-0.45, length(id)), xend=id+0.5, yend=rep(-0.23, length(id)),
+#            col="black") +
+#   annotate("text", x=id2, y=rep(-0.44, length(id)),
+#           label=id_label, size = 2, hjust = "bottom",
+#           fontface = "bold", angle = 90) +
+#   coord_cartesian(xlim = c(0,dim(pca_loadings)[1]), 
+#                   ylim = c(min(pca_loadings %>% select(2:max(factor_n,2))),
+#                            max(pca_loadings %>% select(2:max(factor_n,2)))), 
+#                   expand = TRUE, 
+#                   clip = "off")
+# 
+# pca_loadings_plot2 <- pca_loadings_relevant %>% 
+#   filter(PC == "PC2") %>% 
+#   ggplot()+
+#   geom_bar(aes(x = VARIABLE, y = LOADING), stat = "identity") +
+#   theme_thesis +
+#   theme(axis.text.x = element_text(angle = 90, 
+#                                    hjust = 1,
+#                                    vjust= 0.25,
+#                                    size = 5),
+#         plot.margin=unit(c(1,1,4,1.2),"cm"),
+#         panel.grid.major.x = element_line(color = "grey90", size = 0.5),
+#         axis.title.x = element_blank()) +
+#   annotate("segment", x=id+0.5, y=rep(-0.45, length(id)), xend=id+0.5, yend=rep(-0.23, length(id)),
+#            col="black") +
+#   annotate("text", x=id2, y=rep(-0.44, length(id)),
+#            label=id_label, size = 2, hjust = "bottom",
+#            fontface = "bold", angle = 90) +
+#   coord_cartesian(xlim = c(0,dim(pca_loadings)[1]), 
+#                   ylim = c(min(pca_loadings %>% select(2:max(factor_n,2))),
+#                            max(pca_loadings %>% select(2:max(factor_n,2)))), 
+#                   expand = TRUE, 
+#                   clip = "off")
+# 
+# grid.arrange(pca_loadings_plot1,
+#              pca_loadings_plot2,
+#              nrow=2)
+# 
+# 
+# # Visualizations via R^2
+# data_R2 <- pca_scores %>% 
+#   select(1:factor_n) %>% 
+#   bind_cols(feature_space)
+# 
+# data_R2_PC1 <- tibble("VARIABLE" = colnames(feature_space)) %>% 
+#   mutate(DATA = map(VARIABLE, function(x) data_R2[,c("PC1",x)]),
+#          LM = map(DATA, function(x) lm(PC1~., data = x)),
+#          R2 = map(LM, function(x) summary(x)$r.squared)) %>% 
+#   select(VARIABLE, R2) %>% 
+#   unnest()
+# 
+# data_R2_PC1 %>% 
+#   ggplot()+
+#   geom_bar(aes(x = VARIABLE, y = R2), stat = "identity") +
+#   theme_thesis +
+#   theme(axis.text.x = element_text(angle = 90, 
+#                                    hjust = 1,
+#                                    vjust= 0.25,
+#                                    size = 5),
+#         plot.margin=unit(c(1,1,4,1.2),"cm"),
+#         panel.grid.major.x = element_line(color = "grey90", size = 0.5),
+#         axis.title.x = element_blank()) +
+#   annotate("segment", x=id+0.5, y=rep(-0.5, length(id)), xend=id+0.5, yend=rep(0.8, length(id)),
+#            col="black") +
+#   annotate("text", x=id2, y=rep(-0.49, length(id)),
+#            label=id_label, size = 2, hjust = "bottom",
+#            fontface = "bold", angle = 90) +
+#   coord_cartesian(xlim = c(0,dim(data_R2_PC1)[1]), 
+#                   ylim = c(min(data_R2_PC1 %>% select(R2)),
+#                            max(data_R2_PC1 %>% select(R2))), 
+#                   expand = TRUE, 
+#                   clip = "off")
+# 
+# data_R2_PC2 <- tibble("VARIABLE" = colnames(feature_space)) %>% 
+#   mutate(DATA = map(VARIABLE, function(x) data_R2[,c("PC2",x)]),
+#          LM = map(DATA, function(x) lm(PC2~., data = x)),
+#          R2 = map(LM, function(x) summary(x)$r.squared)) %>% 
+#   select(VARIABLE, R2) %>% 
+#   unnest()
+# 
+# data_R2_PC2 %>% 
+#   ggplot()+
+#   geom_bar(aes(x = VARIABLE, y = R2), stat = "identity") +
+#   theme_thesis +
+#   theme(axis.text.x = element_text(angle = 90, 
+#                                    hjust = 1,
+#                                    vjust= 0.25,
+#                                    size = 5),
+#         plot.margin=unit(c(1,1,4,1.2),"cm"),
+#         panel.grid.major.x = element_line(color = "grey90", size = 0.5),
+#         axis.title.x = element_blank()) +
+#   annotate("segment", x=id+0.5, y=rep(-0.2, length(id)), xend=id+0.5, yend=rep(0.35, length(id)),
+#            col="black") +
+#   annotate("text", x=id2, y=rep(-0.19, length(id)),
+#            label=id_label, size = 2, hjust = "bottom",
+#            fontface = "bold", angle = 90) +
+#   coord_cartesian(xlim = c(0,dim(data_R2_PC1)[1]), 
+#                   ylim = c(min(data_R2_PC2 %>% select(R2)),
+#                            max(data_R2_PC2 %>% select(R2))), 
+#                   expand = TRUE, 
+#                   clip = "off")
 
 # Model selection ---------------------------------------------------------
 # Plot non-stationary time series
@@ -408,6 +408,83 @@ model_FAVAR <- data_FAVAR %>%
   VAR(p = final_p, type = "const")
 
 summary(model_FAVAR$varresult$REAL_GDP_GROWTH)
+
+
+
+
+# Granger causality -------------------------------------------------------
+# Tests whether independent variables granger cause dependent variable (REAL_GDP_GROWTH).
+# Basically this is a F-Test comparing explanatory power of an unrestricted model with all variables (Y & X) and the smaller model
+# without the variable whose "causality" should be tested.
+# In its core the Granger causality test is a F-Test with H_0: R^2 of the unrestricted model including the lagged values 
+# of Y and X is equal to the R^2 of the smaller model with only lagged values of Y. The ratio of both R^2 builds the F-statistic.
+# For large values of the F-statitistic H_0 (no "granger causality") can be rejected.
+
+
+
+## Joint Granger causality ================================================
+
+# Joint granger causality test (causality of one variable on all other variables)
+granger_FAVAR_joint1 <- data_FAVAR %>% 
+  select(-DATE_QUARTER) %>%
+  colnames() %>% 
+  enframe(name = NULL, value = "SERIES") %>% 
+  mutate(GRANGER = map(SERIES, function(x) causality(model_FAVAR, cause = x, vcov. = vcovHC(model_FAVAR))$Granger),
+         P_VALUE = map(GRANGER, ~ .$p.value[1,1])) %>% 
+  unnest(P_VALUE)
+
+#granger_FAVAR_joint1
+
+
+# Joint granger causality test (causality of all variables on one variables)
+variables_FAVAR <- data_FAVAR %>% 
+  select(-DATE_QUARTER) %>% 
+  names()
+
+granger_FAVAR_joint2 <- data_FAVAR %>% 
+  select(-DATE_QUARTER) %>%
+  colnames() %>% 
+  enframe(name = NULL, value = "SERIES") %>% 
+  mutate(GRANGER = map(SERIES, function(x) causality(model_FAVAR, cause = variables_FAVAR[!(variables_FAVAR == x)], vcov. = vcovHC(model_FAVAR))$Granger),
+         P_VALUE = map(GRANGER, ~ .$p.value[1,1])) %>% 
+  unnest(P_VALUE)
+
+granger_FAVAR_joint2
+
+
+
+
+
+
+# Granger causality of all features on traget variable
+model_FAVAR %>% 
+  causality(cause = variables_FAVAR[!str_detect(string = variables_FAVAR, pattern = "REAL_GDP_GROWTH")], vcov. = vcovHC(.)) %>% 
+  .$Granger
+
+
+## Individual Granger causality ===========================================
+
+
+# Test whether the inclusion of the respective variable improves
+# the minimal model with only lagged values of the target (AR model)
+granger_FAVAR_ind1 <- tibble(.rows = ncol(data_FAVAR)) %>%                 # create tibble with number of rows being equal to the number of columns in dataframe input
+  mutate(VARIABLE = colnames(data_FAVAR)) %>%                           # create string column with column names as input
+  mutate(SERIES = map(data_FAVAR, ~ (c(t(.))))) %>%                     # create column with nested time series of respective variable
+  filter(VARIABLE != "DATE_QUARTER") %>% 
+  filter(VARIABLE != "REAL_GDP_GROWTH") %>% 
+  mutate(GRANGER = map(SERIES, function(v) grangertest(x = data_FAVAR$REAL_GDP_GROWTH, y = v, order = final_p)),
+         P_VALUE = map(GRANGER, ~ .$`Pr(>F)`[2])
+  ) %>% 
+  unnest(P_VALUE)
+
+granger_FAVAR_ind1
+
+
+# Test whether the inclusion of the respective variable improves
+# the full model including all variables
+granger_FAVAR_ind2 <- function_granger_stepwise(df = data_FAVAR, lags = final_p)
+#granger_FAVAR_ind2
+
 
 
 
@@ -495,82 +572,6 @@ residual %>%
            fitdf = 0)  
 # cannot reject the H_0 that residuals are independent (White noise) as p > 0.01 or alternatively 
 # cannot reject the H_0 that autocorrelation in residual series is not statistically different from a zero set
-
-
-
-
-# Granger causality -------------------------------------------------------
-# Tests whether independent variables granger cause dependent variable (REAL_GDP_GROWTH).
-# Basically this is a F-Test comparing explanatory power of an unrestricted model with all variables (Y & X) and the smaller model
-# without the variable whose "causality" should be tested.
-# In its core the Granger causality test is a F-Test with H_0: R^2 of the unrestricted model including the lagged values 
-# of Y and X is equal to the R^2 of the smaller model with only lagged values of Y. The ratio of both R^2 builds the F-statistic.
-# For large values of the F-statitistic H_0 (no "granger causality") can be rejected.
-
-
-
-## Joint Granger causality ================================================
-
-# Joint granger causality test (causality of one variable on all other variables)
-granger_FAVAR_joint1 <- data_FAVAR %>% 
-  select(-DATE_QUARTER) %>%
-  colnames() %>% 
-  enframe(name = NULL, value = "SERIES") %>% 
-  mutate(GRANGER = map(SERIES, function(x) causality(model_FAVAR, cause = x, vcov. = vcovHC(model_FAVAR))$Granger),
-         P_VALUE = map(GRANGER, ~ .$p.value[1,1])) %>% 
-  unnest(P_VALUE)
-
-granger_FAVAR_joint1
-
-
-# Joint granger causality test (causality of all variables on one variables)
-variables_FAVAR <- data_FAVAR %>% 
-  select(-DATE_QUARTER) %>% 
-  names()
-
-granger_FAVAR_joint2 <- data_FAVAR %>% 
-  select(-DATE_QUARTER) %>%
-  colnames() %>% 
-  enframe(name = NULL, value = "SERIES") %>% 
-  mutate(GRANGER = map(SERIES, function(x) causality(model_FAVAR, cause = variables_FAVAR[!(variables_FAVAR == x)], vcov. = vcovHC(model_FAVAR))$Granger),
-         P_VALUE = map(GRANGER, ~ .$p.value[1,1])) %>% 
-  unnest(P_VALUE)
-
-granger_FAVAR_joint2
-
-
-
-
-
-
-# Granger causality of all features on traget variable
-model_FAVAR %>% 
-  causality(cause = variables_FAVAR[!str_detect(string = variables_FAVAR, pattern = "REAL_GDP_GROWTH")], vcov. = vcovHC(.)) %>% 
-  .$Granger
-
-
-## Individual Granger causality ===========================================
-
-
-# Test whether the inclusion of the respective variable improves
-# the minimal model with only lagged values of the target (AR model)
-granger_FAVAR_ind1 <- tibble(.rows = ncol(data_FAVAR)) %>%                 # create tibble with number of rows being equal to the number of columns in dataframe input
-  mutate(VARIABLE = colnames(data_FAVAR)) %>%                           # create string column with column names as input
-  mutate(SERIES = map(data_FAVAR, ~ (c(t(.))))) %>%                     # create column with nested time series of respective variable
-  filter(VARIABLE != "DATE_QUARTER") %>% 
-  filter(VARIABLE != "REAL_GDP_GROWTH") %>% 
-  mutate(GRANGER = map(SERIES, function(v) grangertest(x = data_FAVAR$REAL_GDP_GROWTH, y = v, order = final_p)),
-         P_VALUE = map(GRANGER, ~ .$`Pr(>F)`[2])
-  ) %>% 
-  unnest(P_VALUE)
-
-granger_FAVAR_ind1
-
-
-# Test whether the inclusion of the respective variable improves
-# the full model including all variables
-granger_FAVAR_ind2 <- function_granger_stepwise(df = data_FAVAR, lags = final_p)
-granger_FAVAR_ind2
 
 
 

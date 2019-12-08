@@ -2,8 +2,12 @@
 setwd("J:\\Studium\\Master\\Masterthesis")
 
 rf_assess <- FALSE
-gb_assess <- TRUE
-sv_assess <- FALSE
+gb_assess <- FALSE
+sv_assess <- TRUE
+
+Qrtr <- TRUE
+Yr <- FALSE
+
 
 # Sourcing ----------------------------------------------------------------
 source(file = file.path(getwd(), "Code", "src_setup.R"))
@@ -12,28 +16,39 @@ source(file = file.path(getwd(), "Code", "src_setup.R"))
 # Loading results ---------------------------------------------------------
 
 if(rf_assess){
-  load(file.path(getwd(), "Results", "Random_Forest", "performance_benchmark_rf.RData"))
-  load(file.path(getwd(), "Results", "Random_Forest", "tuning_results_rf.rf.RData"))
-  load(file.path(getwd(), "Results", "Random_Forest", "tuning_results_rf.rfSRC.RData"))
-  load(file.path(getwd(), "Results", "Random_Forest", "tuning_results_rf.ranger.RData"))
-  load(file.path(getwd(), "Results", "Random_Forest", "finetuning_results_rf.RData"))
-  load(file.path(getwd(), "Results", "Random_Forest", "performance_results_rf.RData"))
+  if(Qrtr){
+    load(file.path(getwd(), "Results", "Crisis", "RF", "performance_benchmark_rf_Q.RData"))
+    load(file = file.path(getwd(), "Results", "Crisis", "RF", "tuning_results_rf.ranger_Q.RData"))
+  }
+  
+  if(Yr){
+    load(file.path(getwd(), "Results", "Crisis", "RF", "performance_benchmark_rf_Y.RData"))
+    load(file = file.path(getwd(), "Results", "Crisis", "RF", "tuning_results_rf.rf_Y.RData"))
+  }
 }
 
 if(gb_assess){
-  load(file.path(getwd(), "Results", "Gradient_Boosting", "performance_benchmark_gb.RData"))
-  load(file.path(getwd(), "Results", "Gradient_Boosting", "tuning_results_gb.gbm.RData"))
-  load(file.path(getwd(), "Results", "Gradient_Boosting", "tuning_results_gb.xgb.RData"))
-  load(file.path(getwd(), "Results", "Gradient_Boosting", "finetuning_results_gb.RData"))
-  load(file.path(getwd(), "Results", "Gradient_Boosting", "performance_results_gb.RData"))
+  if(Qrtr){
+    load(file.path(getwd(), "Results", "Crisis", "GB", "performance_benchmark_gb_Q.RData"))
+    load(file = file.path(getwd(), "Results", "Crisis", "GB", "tuning_results_gb.xgb_Q.RData"))
+  }
+  
+  if(Yr){
+    load(file.path(getwd(), "Results", "Crisis", "GB", "performance_benchmark_gb_Y.RData"))
+    load(file = file.path(getwd(), "Results", "Crisis", "GB", "tuning_results_gb.gbm_Y.RData"))
+  }
 }
 
 if(sv_assess){
-  load(file.path(getwd(), "Results", "Support_Vector_Regression", "performance_benchmark_sv.RData"))
-  load(file.path(getwd(), "Results", "Support_Vector_Regression", "tuning_results_sv.svm.RData"))
-  load(file.path(getwd(), "Results", "Support_Vector_Regression", "tuning_results_sv.ksvm.RData"))
-  load(file.path(getwd(), "Results", "Support_Vector_Regression", "finetuning_results_sv.RData"))
-  load(file.path(getwd(), "Results", "Support_Vector_Regression", "performance_results_sv.RData"))
+  if(Qrtr){
+    load(file.path(getwd(), "Results", "Crisis", "SVR", "performance_benchmark_sv_Q.RData"))
+    load(file = file.path(getwd(), "Results", "Crisis", "SVR", "tuning_results_sv.svm_Q.RData"))
+  }
+  
+  if(Yr){
+    load(file.path(getwd(), "Results", "Crisis", "SVR", "performance_benchmark_sv_Y.RData"))
+    load(file = file.path(getwd(), "Results", "Crisis", "SVR", "tuning_results_sv.svm_Y.RData"))
+  }
 }
 
 
@@ -44,7 +59,7 @@ if(sv_assess){
 ### Benchmarking analysis #################################################
 
 # Best performer from set of same machine learning class
-performance_benchmark_rf                                                   # ranger yields best results
+performance_benchmark_rf                                                  
 
 # Hyperparameter constellations of different implementations
 performance_benchmark_rf$learners$randomForest$par.vals %>% 
@@ -54,7 +69,7 @@ performance_benchmark_rf$learners$randomForestSRC$par.vals %>%
 performance_benchmark_rf$learners$ranger$par.vals %>% 
   as_tibble()
 
-# Small number of trees for rf and rfSRC and small tree size (minimum node size relatively large which implies a small tree size). For ranger large tree size
+
 
 # Hyperparameters of best learner
 best_learner_rf <- generateHyperParsEffectData(tuning_results_rf.rf, 
@@ -69,8 +84,8 @@ npar_rf <- 3
 
 # Top parameter constellations
 best_learner_rf10 <- best_learner_rf %>% 
-  top_n(10*npar_rf, -mse.test.mean) %>% 
-  arrange(mse.test.mean)
+  top_n(10*npar_rf, -rmse.test.rmse) %>% 
+  arrange(rmse.test.rmse)
 
 # Extract 25% and 75% quantiles of top 10 results of all hyperparameters for lower and upper bound in finetuning
 quantile(best_learner_rf10$ntree, probs = 0.25)
@@ -83,15 +98,15 @@ quantile(best_learner_rf10$nodesize, probs = 0.75)
 
 
 # Check indices
-tuning_results_rf.rf$resampling$train.inds
-tuning_results_rf.rf$resampling$test.inds
+tuning_results_rf.ranger$resampling$train.inds
+tuning_results_rf.ranger$resampling$test.inds
 
 # Check test results (gives forecasting results on both each training data point and test data)
-performance_benchmark_rf$results$gdp_forecast$randomForest$pred$data %>% 
+performance_benchmark_rf$results$gdp_forecast$ranger$pred$data %>% 
   as_tibble() 
 
 # Summarise results in fashion of econometric models
-performance_benchmark_rf$results$gdp_forecast$randomForest$pred$data %>% 
+performance_benchmark_rf$results$gdp_forecast$ranger$pred$data %>% 
   as_tibble() %>% 
   filter(set == "test") %>% 
   mutate(MODEL_ID = "RF.rf") %>% 
@@ -209,7 +224,7 @@ sapply(vim_rf, mean) %>%
 ### Benchmarking analysis #################################################
 
 # Best performer from set of same machine learning class
-performance_benchmark_gb                                                   # xgboost yields best results
+performance_benchmark_gb      
 
 # Hyperparameter constellations of different implementations
 performance_benchmark_gb$learners$gbm$par.vals %>% 
@@ -217,10 +232,10 @@ performance_benchmark_gb$learners$gbm$par.vals %>%
 performance_benchmark_gb$learners$xgboost$par.vals %>% 
   as_tibble()
 
-# Small number of trees for rf and rfSRC and small tree size (minimum node size relatively large which implies a small tree size). For ranger large tree size
+
 
 # Hyperparameters of best learner
-best_learner_gb <- generateHyperParsEffectData(tuning_results_gb.xgb, 
+best_learner_gb <- generateHyperParsEffectData(tuning_results_gb.gbm, 
                                                include.diagnostics = FALSE, 
                                                trafo = TRUE, 
                                                partial.dep = TRUE) %>% 
@@ -232,21 +247,21 @@ npar_gb <- 3
 
 # Top parameter constellations
 best_learner_gb10 <- best_learner_gb %>% 
-  top_n(10*npar_gb, -mse.test.mean) %>% 
-  arrange(mse.test.mean)
+  top_n(10*npar_gb, -rmse.test.rmse) %>% 
+  arrange(rmse.test.rmse)
 
 # Extract 25% and 75% quantiles of top 10 results of all hyperparameters for lower and upper bound in finetuning
-quantile(best_learner_gb10$nrounds, probs = 0.25)
-quantile(best_learner_gb10$nrounds, probs = 0.75)
-range(best_learner_gb10$nrounds)
+quantile(best_learner_gb10$n.trees, probs = 0.25)
+quantile(best_learner_gb10$n.trees, probs = 0.75)
+range(best_learner_gb10$n.trees)
 
-quantile(best_learner_gb10$eta, probs = 0.25)
-quantile(best_learner_gb10$eta, probs = 0.75)
-range(best_learner_gb10$eta)
+quantile(best_learner_gb10$shrinkage, probs = 0.25)
+quantile(best_learner_gb10$shrinkage, probs = 0.75)
+range(best_learner_gb10$shrinkage)
 
-quantile(best_learner_gb10$max_depth, probs = 0.25)
-quantile(best_learner_gb10$max_depth, probs = 0.75)
-range(best_learner_gb10$max_depth)
+quantile(best_learner_gb10$interaction.depth, probs = 0.25)
+quantile(best_learner_gb10$interaction.depth, probs = 0.75)
+range(best_learner_gb10$interaction.depth)
 
 
 # Check indices
@@ -277,6 +292,18 @@ performance_benchmark_rf$results$gdp_forecast$randomForest$pred$data %>%
             RMSE = sqrt(mean(ERROR^2)))
 
 
+### Finetuning analysis ###################################################
+
+
+hyperparameters_sv <- generateHyperParsEffectData(finetuning_results_gb, 
+                                                  include.diagnostics = FALSE, 
+                                                  trafo = TRUE, 
+                                                  partial.dep = TRUE) %>% 
+  .$data %>% 
+  as_tibble() %>% 
+  arrange(rmse.test.rmse)
+
+
 
 
 
@@ -299,28 +326,31 @@ best_learner_sv <- generateHyperParsEffectData(tuning_results_sv.svm,
                                                trafo = TRUE, 
                                                partial.dep = TRUE) %>% 
   .$data %>% 
-  as_tibble() 
+  as_tibble() %>% 
+  arrange(rmse.test.rmse)
 
-beep(sound = 2)
+# Define number of tuning parameters
+npar_sv <- 3
+
 
 # Top parameter constellations
 best_learner_sv10 <- best_learner_sv %>% 
-  top_n(10*npar_sv, -mse.test.mean) %>% 
-  arrange(mse.test.mean)
+  top_n(10*npar_sv, -rmse.test.rmse) %>% 
+  arrange(rmse.test.rmse)
 
 # Extract 25% and 75% quantiles of top 10 results of all hyperparameters for lower and upper bound in finetuning
 table(best_learner_sv10$kernel) # radial kernel most often in top 10
 best_learner_sv10 <- best_learner_sv %>% 
   filter(kernel == "sigmoid") %>% 
-  top_n(10*npar_sv, -mse.test.mean) %>% 
-  arrange(mse.test.mean)
+  top_n(10*npar_sv, -rmse.test.rmse) %>% 
+  arrange(rmse.test.rmse)
 
 format(range(best_learner_sv10$cost), scientific = FALSE)
 format(range(best_learner_sv10$epsilon), scientific = FALSE)
 format(range(best_learner_sv10$gamma), scientific = FALSE)
 quantile(best_learner_sv10$cost, probs = 0.25)
 quantile(best_learner_sv10$cost, probs = 0.75)
-quantile(best_learner_sv10$epsilon, probs = 0.25)
+format(quantile(best_learner_sv10$epsilon, probs = 0.25), scientific=FALSE)
 quantile(best_learner_sv10$epsilon, probs = 0.75)
 quantile(best_learner_sv10$gamma, probs = 0.25)
 quantile(best_learner_sv10$gamma, probs = 0.75)
@@ -336,12 +366,13 @@ performance_results_sv.svm
 
 finetuning_results_sv.svm
 
-hyperparameters_sv <- generateHyperParsEffectData(finetuning_results_sv.svm, 
+hyperparameters_sv <- generateHyperParsEffectData(finetuning_results_sv, 
                                                   include.diagnostics = FALSE, 
                                                   trafo = TRUE, 
                                                   partial.dep = TRUE) %>% 
   .$data %>% 
-  as_tibble()
+  as_tibble() %>% 
+  arrange(rmse.test.rmse)
 
 
 

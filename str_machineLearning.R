@@ -5,12 +5,12 @@ setwd("J:\\Studium\\Master\\Masterthesis")
 #training_start <- "1987 Q2"       # Set the first quarter of training data
 training_end <- "2007 Q1"         # Set the last quarter of training data, the subsequent quarter is the first quarter to be forecasted (Note: Go to "2007 Q1" once the latest observation is "2019 Q2")
 forecasting_periods <- 1          # Set how many periods ahead shall be forecasted (Note if forecasting_periods = 1: features will be lagged with lag order 1:max_lag, if forecasting_periods = 2: features will be lagged with lag order 2:max_lag, and so on)
-max_lag <- 10                      # Set how many lags of each variable shall be included in the feature space
+max_lag <- 1                      # Set how many lags of each variable shall be included in the feature space
 
 
 # mlr-SPECIFIC
 # Cross Validation
-tuning <- FALSE                     # is tuning required (TRUE if yes)
+tuning <- FALSE                   # is tuning required (TRUE if yes)
 growing <- TRUE                   # If TRUE, cross validation follows a growing window strategy, if FALSE a sliding window strategy
 horizon <- 1                      # Set the number of observations in the test set (default = 1, since we are doing one-step ahead forecasts)
 skip <- 10                        # Set the number of training/validation sets which should be skipped (choose one of: 5, 10 & 25; the higher the less CVs)
@@ -22,7 +22,7 @@ tuning_resolution <- 11           # Set the number of equally spaced parameter v
 tuning_factor <-  100             # Determine the number of iterations in random search (tuning_factor*npar (first-stage tuning))
 
 # SPECIAL
-selective <- TRUE                 # set true if only a selected features shall be considered
+selective <- FALSE                 # set true if only a selected features shall be considered
 leading_i <- c(                   # define a list of leading indicators
                "HOUST",
                "AMDMN_OX",
@@ -181,11 +181,11 @@ source(file = file.path(getwd(), "Code", "str_machineLearning_rf.R"))
 
 
 ### Gradient Boosting #####################################################
-source(file = file.path(getwd(), "Code", "str_machineLearning_gb.R"))
+#source(file = file.path(getwd(), "Code", "str_machineLearning_gb.R"))
 
 
 ### Support Vector Regression #############################################
-source(file = file.path(getwd(), "Code", "str_machineLearning_sv.R"))
+#source(file = file.path(getwd(), "Code", "str_machineLearning_sv.R"))
 
 
 # -------------------------------------------------------------------------

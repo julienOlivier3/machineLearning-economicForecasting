@@ -16,12 +16,14 @@ function_package <- function(pkg){
 ## Package list ===========================================================
 packages <- c("xlsx",                                                      # read excel files
               "reshape2",                                                  # data reshaping such as melt $ cast
+              "scales",                                                    # for nice formatting options
               "imputeTS",                                                  # imputation methods for time series data
               "lubridate",                                                 # simple year, month, ... functions
               "zoo",                                                       # another time series package
               "forecast",                                                  # another time series package
               "tseries",                                                   # another time series package
               "timetk",                                                    # yet another time series package (suitable for time series machine learning)
+              "multDM",                                                    # Diebold-Mariano test for equal predictive accuracy of two forecasting models
               "dynlm",                                                     # estimating time series models
               "lmtest",                                                    # test statistics for parameter estimates
               "urca",                                                      # for stationarity testing
@@ -53,8 +55,9 @@ packages <- c("xlsx",                                                      # rea
               "tidyquant",                                                 # ... and even more functions which can be applied in a tidy fashion
               "beepr",                                                     # sound indicating that code execution has finished
               "ggthemes",                                                  # additional ggplot themes (e.g. economist theme)
-              "corrplot",                                                   # correlation plot
-              "ggcorrplot"                                                   # correlation plot
+              "corrplot",                                                  # correlation plot
+              "ggcorrplot",                                                # correlation plot
+              "tikzDevice"                                                 # for latex visualiztions
               )
 
 function_package(packages)
@@ -74,8 +77,18 @@ bb_green_dark <- rgb(151, 191, 13, maxColorValue = 255)
 bb_green_medium <- rgb(172, 204, 61, maxColorValue = 255)
 bb_green_light <- rgb(193, 216, 110, maxColorValue = 255)
 
-function_gradient_blue <- colorRampPalette(c(bb_blue_light, bb_blue_dark))
+ml_green_dark <- "seagreen4"
+ml_green_medium <- "seagreen3"
+ml_green_light <- "seagreen2"
+# ml_green_dark <- "aquamarine4"
+# ml_green_medium <- "aquamarine3"
+# ml_green_light <- "aquamarine2"
 
+function_gradient_blue <- colorRampPalette(c(bb_blue_light, bb_blue_dark))
+function_gradient_green <- colorRampPalette(c(ml_green_light, ml_green_dark))
+function_gradient_redTOgreen <- colorRampPalette(c(bb_red_dark, ml_green_dark))
+function_gradient_redTOwhiteTOgreen <- colorRampPalette(c(bb_red_dark, "white", ml_green_dark))
+function_gradient_redTOblueTOgreen <- colorRampPalette(c(bb_red_dark, bb_blue_dark, ml_green_dark))
 
 
 
@@ -93,12 +106,18 @@ theme_thesis <- theme(
   #axis.text.x = element_text(family = "Arial", angle = 45, hjust = 1),
   axis.text.x = element_text(color = "black"),
   axis.text.y = element_text(color = "black"),
-  axis.title = element_text(size = 12, face = "bold"),
-  #axis.title.y = element_text(family = "Arial", margin = margin(t = 0, r = 20, b = 0, l = 0)), # not working?
-  #axis.title.x = element_text(family = "Arial", margin = margin(t = 0, r = 0, b = 20, l = 0)),
-  plot.title = element_text(size = 15, hjust = 0),
+  #axis.title = element_text(size = 12, face = "bold", margin = margin(t = 0, r = 0, b = 0, l = 0, unit = "pt")),  # not working?
+  axis.title.y = element_text(size = 10, face = "bold", vjust = -.1),
+  axis.title.x = element_text(size = 10, face = "bold", vjust = -.1),
+  plot.title = element_text(size = 12, hjust = 0),
   legend.key = element_blank(),
-  axis.ticks = element_blank())
+  axis.ticks = element_blank(),
+  strip.text.x = element_text(size = 10, color = "white", face = "bold"),    # changes facet labels
+  strip.text.y = element_text(size = 10, color = "white", face = "bold"),
+  #strip.background = element_rect(color="black", fill="grey", size=1, linetype="solid")
+  strip.background = element_rect(fill="grey"),
+  #plot.margin = unit(c(1,1,1,1), "cm")
+  )
 
 # Specify geom to update, and list attibutes you want to change appearance of
 update_geom_defaults("line", list(size = 1))
@@ -459,7 +478,7 @@ function_pcr_cv <- function(data_training,                                      
   } 
   return(FAVAR_results_cv)
 } 
-## Spread multiple columns function ---------------------------------------
+## Spread multiple columns function =======================================
 spread_n <- function(df, key, value) {
   # quote key
   keyq <- rlang::enquo(key)
@@ -472,7 +491,7 @@ spread_n <- function(df, key, value) {
 }
 
 
-## Extract results from resample object -----------------------------------
+## Extract results from resample object ===================================
 
 
 help_function <- function(df, id_name, flag_se, horizon){
@@ -507,4 +526,17 @@ help_function <- function(df, id_name, flag_se, horizon){
            ERROR=TRUE_VALUE-MEAN
     ) %>% 
     select(c(colnames(ECO_Q)))
+}
+
+
+## Ggplot helpers =========================================================
+
+reorder_within <- function(x, by, within, fun = mean, sep = "___", ...) {
+  new_x <- paste(x, within, sep = sep)
+  stats::reorder(new_x, by, FUN = fun)
+}
+
+scale_x_reordered <- function(..., sep = "___") {
+  reg <- paste0(sep, ".+$")
+  ggplot2::scale_x_discrete(labels = function(x) gsub(reg, "", x), ...)
 }

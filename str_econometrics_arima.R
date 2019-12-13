@@ -8,14 +8,14 @@ training_end <- "2007 Q1"         # Set the last quarter of training data, the s
 
 
 # ARIMA
-ic <- "bic"                      # select information criteria used for order selection ("aic", "bic" or "aicc")
+ic <- "aicc"                      # select information criteria used for order selection ("aic", "bic" or "aicc")
 max_p <- 10                       # select maximum number of AR terms 
 max_q <- 10                       # select maximum number of MA terms
 lag_max <- 10                     # maximum number of lags considered in ACF plots
  
-final_p <- c(0.2023,  0.1898)     # define AR parameters of final model
+final_p <- c(-0.3830,  0.3274)     # define AR parameters of final model
 #final_p <- c(0.0076,  -0.6564,  0.2239,  0.2098,  -0.0645,  0.1304)
-final_q <- 0              # define MA parameters of final model
+final_q <- 0.6230              # define MA parameters of final model
 #final_q <- c(0.2548, 0.9742)                   
 
 
@@ -60,31 +60,44 @@ data_test <- tidy_yx_yq_stat %>%
 
 # Examination autocorrelation ---------------------------------------------
 # ACF and PACF diagnostic plots
+ci2 <- qnorm((1 + .95)/2)/sqrt(dim(data_training)[1])                      # calculate confidence bands manually
+
 plot_acf <- data_training %>% 
   select(REAL_GDP_GROWTH) %>%                                              # select target variable
-  ggAcf(main = "", lag.max = lag_max) +                                    # plot empirical ACF
-  geom_segment(aes(x = seq(1,lag_max),                                     # add theoretical ACF based on the parameter estimates from the final model
-                   y = ARMAacf(ar = final_p, ma = final_q, lag.max = lag_max, pacf = FALSE)[-1],
-                   xend = seq(1,lag_max),
-                   yend = 0), 
-               color = "red",
-               alpha = 0.5) +
+  ggAcf(main = "", lag.max = lag_max, ci = 0) +                            # plot empirical ACF
+  geom_segment(lineend = "butt", color = ml_green_medium) +                # control color of empirical ACF
+  geom_hline(yintercept = 0, color = "black") +                            # add X axis
+  # geom_segment(aes(x = seq(1,lag_max),                                     # add theoretical ACF based on the parameter estimates from the final model
+  #                  y = ARMAacf(ar = final_p, ma = final_q, lag.max = lag_max, pacf = FALSE)[-1],
+  #                  xend = seq(1,lag_max),
+  #                  yend = 0), 
+  #              color = ml_green_dark,
+  #              alpha = 0.5) +
+  geom_hline(yintercept = c(ci2, -ci2), color = "grey", linetype = "dashed") +
   theme_thesis
 
 
 plot_pcf <- data_training %>%  
   select(REAL_GDP_GROWTH) %>%                                              # select target variable
-  ggPacf(main = "", lag.max = lag_max) +                                   # plot empirical ACF
-  geom_segment(aes(x = seq(1,lag_max),                                     # add theoretical PACF based on the parameter estimates from the final model
-                   y = ARMAacf(ar = final_p, ma = final_q, lag.max = lag_max, pacf = TRUE),
-                   xend = seq(1,lag_max),
-                   yend = 0), 
-               color = "red",
-               alpha = 0.5) +
+  ggPacf(main = "", lag.max = lag_max, ci = 0) +                           # plot empirical ACF
+  geom_segment(lineend = "butt", color = ml_green_medium) +
+  geom_hline(yintercept = 0, color = "black") +
+  # geom_segment(aes(x = seq(1,lag_max),                                     # add theoretical PACF based on the parameter estimates from the final model
+  #                  y = ARMAacf(ar = final_p, ma = final_q, lag.max = lag_max, pacf = TRUE),
+  #                  xend = seq(1,lag_max),
+  #                  yend = 0), 
+  #              color = ml_green_dark,
+  #              alpha = 0.5) +
+  geom_hline(yintercept = c(ci2, -ci2), color = "grey", linetype = "dashed") +
   theme_thesis
+
+tikz("plot_acf_pacf.tex",
+     height = 4,
+     width = 6)
 
 grid.arrange(plot_acf, plot_pcf)
 
+dev.off()
 
 # Model selection ---------------------------------------------------------
 
@@ -150,32 +163,57 @@ residual <- model_AR %>%
   as_tibble() %>%
   rename(RESIDUALS = x) %>% 
   bind_cols(data_training %>% select(DATE_QUARTER)) %>%                    # bind the respective date to the residuals (required for time series plot of residuals)
-  filter(!(row.names(.) %in% 1:length(final_p)))                           # drop the residuals which are meaningless (=0) according to the number of AR components in the model
+  filter(!(row.names(.) %in% 1:length(final_p))) %>%                       # drop the residuals which are meaningless (=0) according to the number of AR components in the model
   select(DATE_QUARTER, RESIDUALS)
   
 
 # Residual ACF
-residual %>% 
-  select(RESIDUALS) %>%                                                     # select residuals
-  ggAcf(main = "", lag.max = lag_max) +                                     # plot empirical ACF
+
+
+plot_res_acf <- residual %>% 
+  select(RESIDUALS) %>%                                                    # select residuals
+  ggAcf(main = "", lag.max = lag_max, ci = 0) +                            # plot empirical ACF
+  geom_segment(lineend = "butt", color = ml_green_medium) +                # control color of empirical ACF
+  geom_hline(yintercept = 0, color = "black") +                            # add X axis
+  geom_hline(yintercept = c(ci2, -ci2), color = "grey", linetype = "dashed") +
   theme_thesis
 
 # Residual time series
-residual %>% 
+plot_res_time <- residual %>% 
   ggplot() +
-  geom_line(aes(x = DATE_QUARTER, y = RESIDUALS)) +
-  theme_thesis +
+  geom_line(aes(x = DATE_QUARTER, y = RESIDUALS), color = ml_green_dark) +
   xlab("Date") +
-  ylab("Residuals")
+  ylab("Residuals") +
+  theme_thesis +
+  theme(panel.grid.major.x = element_line(color = "grey90", size = 0.5))
 
 # Residual distribution
-residual %>% 
+plot_res_dist <-residual %>% 
   ggplot(aes(x = RESIDUALS)) +
-  geom_histogram(aes(y = ..density..), fill = bb_blue_medium, color = "white") +
-  geom_density() +
-  theme_thesis +
+  geom_histogram(aes(y = ..density..), 
+                 fill = ml_green_medium, 
+                 alpha = 0.5,
+                 color = "white") +
+  stat_function(fun = dnorm, 
+                args = list(mean = mean(residual$RESIDUALS), sd = sd(residual$RESIDUALS)),
+                color = ml_green_dark,
+                size = 1) +
   xlab("Residuals") +
-  ylab("Density")
+  ylab("Density") +
+  theme_thesis +
+  theme(panel.grid.major.x = element_line(color = "grey90", size = 0.5))
+
+
+tikz("plot_res_arima.tex",
+     height = 4,
+     width = 6)
+
+grid.arrange(plot_res_time, plot_res_acf, plot_res_dist,
+             ncol = 2,
+             nrow = 2,
+             layout_matrix = matrix(c(1,1,2,3), nrow = 2, ncol = 2, byrow = TRUE))
+
+dev.off()
 
 
 
@@ -198,7 +236,7 @@ residual %>%
 
 
 # Forecasting -------------------------------------------------------------
-
+# see script str_econometrics
 
 #--------------------------------------------------------------------------
 # Miscellaneous -----------------------------------------------------------

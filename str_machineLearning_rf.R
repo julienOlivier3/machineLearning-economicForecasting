@@ -3,8 +3,8 @@
 setwd("J:\\Studium\\Master\\Masterthesis")
 
 # Tuning stage
-benchmarking_rf <- TRUE
-finetuning_rf <- FALSE
+benchmarking_rf <- FALSE
+finetuning_rf <- TRUE
 
 # First-stage tuning setup
 npar_rf <- 3         # Number of tuning parameters

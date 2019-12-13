@@ -14,7 +14,7 @@ VAR_variables <- c("REAL_GDP_GROWTH",
                    #"S_P_500",         # S&P's Common Stock Price Index: Composite
                    "UMCSEN_TX",       # University of Michigan: Consumer Sentiment (Index 1st Quarter 1966=100)
                    "AWHMAN",          # Average Weekly Hours of Production and Nonsupervisory Employees: Manufacturing (Hours)
-                   "T5YFFM")        # 3-month treasury constant maturity rate and federal funds rate
+                   "TB3SMFFM")        # 3-month treasury constant maturity rate and federal funds rate
 
 # VAR_variables <- c("CPIAUCSL",
 #                    "FEDFUNDS",

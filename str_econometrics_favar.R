@@ -121,60 +121,76 @@ id_label <- data_group[order(factor(data_group$GROUP, levels = unique(data_train
 id2 <- c(id[1]/2,id[-length(id)]+diff(id)/2)+0.5
   
 # Calculate correlation matrix
-corr_matrix <- cor(data_training %>% select(-c(DATE_QUARTER, REAL_GDP_GROWTH)))
+corr_matrix <- cor(data_training %>% 
+                     select(-c(DATE_QUARTER, REAL_GDP_GROWTH)) %>% 
+                     rename_at(.vars = vars(contains("_")),
+                               .funs = funs(gsub("_", "\\\\_", .))))
 
 # Calculate p-values for the correlation coefficients
 corr_p <- cor_pmat(corr_matrix)
 
-# Create correlation plot (ggplot style)
-# corr_plot <- ggcorrplot(corr = corr_matrix, 
-#            method = "square", 
-#            type = "lower", 
-#            ggtheme = theme_thesis, 
-#            title = "", 
-#            show.legend = TRUE, 
-#            legend.title = "Corr", 
-#            show.diag = TRUE, 
-#            p.mat = corr_p,
-#            colors = c(bb_green_dark, "white", bb_red_dark),
-#            insig = "pch", 
-#            pch = 4, 
-#            pch.col = "darkgrey",
-#            pch.cex = 1,
-#            hc.order = FALSE) +                                           # this keeps order of variables in the plot 
-#   theme(axis.text.x = element_text(color = "black", size = 5),
-#         axis.text.y = element_text(color = "black", size = 5)) 
+#Create correlation plot (ggplot style)
+tikz("plot_corrM1.tex",
+     height = 6,
+     width = 6)
+corr_plot <- ggcorrplot(corr = corr_matrix,
+                        method = "square",
+                        type = "lower",
+                        ggtheme = theme_thesis,
+                        title = "",
+                        show.legend = TRUE,
+                        legend.title = "Corr",
+                        show.diag = FALSE,
+                        p.mat = corr_p,
+                        colors = c(ml_green_dark, "white", bb_red_dark),
+                        insig = "pch",
+                        pch = 4,
+                        pch.col = "darkgrey",
+                        pch.cex = 1,
+                        hc.order = FALSE) +                                           # this keeps order of variables in the plot
+  theme(axis.text.x = element_text(color = "black", size = 5),
+        axis.text.y = element_text(color = "black", size = 5))
 
-# Add labels and lines to correlation plot
-# corr_plot +
-#   annotate("segment", x=rep(-30, length(id)), y=id+0.5, xend=id+0.5, yend=id+0.5,
-#            col="black") +
-#   annotate("segment", x=id+0.5, y=id+0.5, xend=dim(corr_matrix)[1], yend=id+0.5,
-#            col="black", lty=2) +
-#   annotate("segment", x=id+0.5, y=rep(0, length(id)), xend=id+0.5, yend=id+0.5,
-#            col="black") +
-#   annotate("text", x=rep(-29, length(id)), y=id2,
-#            label=id_label, size = 2, hjust = "left",
-#            fontface = "bold") +
-#   coord_fixed(ratio = 1, xlim = c(1,dim(corr_matrix)[1]), ylim = c(1,dim(corr_matrix)[1]), expand = TRUE,
-#               clip = "off") 
+#Add labels and lines to correlation plot
+corr_plot +
+  annotate("segment", x=rep(-50, length(id)), y=id+0.5, xend=id+0.5, yend=id+0.5,
+           col="black") +
+  annotate("segment", x=id+0.5, y=id+0.5, xend=dim(corr_matrix)[1], yend=id+0.5,
+           col="black", lty=2) +
+  annotate("segment", x=id+0.5, y=rep(0, length(id)), xend=id+0.5, yend=id+0.5,
+           col="black") +
+  annotate("text", x=rep(-49, length(id)), y=id2,
+           label=id_label, size = 2, hjust = "left",
+           fontface = "bold") +
+  # coord_fixed(ratio = 1, xlim = c(1,dim(corr_matrix)[1]), ylim = c(1,dim(corr_matrix)[1]), expand = TRUE,
+  #             clip = "off") +
+  theme(plot.margin = unit(c(0.25,0.25,0.25,4.5), "cm"))
+dev.off()
 
-# Create correlation plot (nice style)
+
+#Create correlation plot (nice style)
+# tikz("plot_corrM.tex",
+#      height = 4,
+#      width = 6)
+# 
 # corrplot(corr_matrix,
-#          method = "square", 
+#          diag = FALSE,
+#          method = "square",
 #          type = "lower",
-#          order = "FPC", 
+#          order = "FPC",
 #          tl.pos	= "ld",
-#          tl.col = "black", 
+#          tl.col = "black",
 #          tl.cex = 0.4,
 #          tl.srt = 45,
-#          p.mat = corr_p, 
-#          sig.level = 0.05, 
-#          insig = "pch", 
+#          p.mat = corr_p,
+#          sig.level = 0.05,
+#          insig = "pch",
 #          pch = "X",
-#          pch.cex = 0.5#, 
-#          #col = c(bb_green_dark, "white", bb_red_dark)
+#          pch.cex = 0.5,
+#          col = function_gradient_redTOwhiteTOgreen(100)
 #          )
+# 
+# dev.off()
 
 
 
@@ -195,7 +211,10 @@ pca_scores <- pca$x %>%
 
 # Extract loading matrix
 pca_loadings <- pca$rotation %>% 
-  as_tibble(rownames = "VARIABLE")
+  as_tibble(rownames = "VARIABLE") %>% 
+  left_join(feature_info %>% select(GROUP, MNEMONIC_FRED_CAPS), 
+            by = c("VARIABLE" = "MNEMONIC_FRED_CAPS")) %>% 
+  select(VARIABLE, GROUP, everything())
 
 
 
@@ -215,19 +234,23 @@ pca_pve <- tibble(PRINCIPAL_COMPONENT = colnames(pca_scores)) %>%
 
 
 # Visualize PVE with respect to the number of PCs (Scree plot)
+tikz("plot_scree.tex",
+     height = 3,
+     width = 6)
 pca_pve %>% 
   mutate(PC_NUMBER = 1:nrow(.)) %>% 
   filter(PC_NUMBER %in% 1:10) %>% 
   ggplot() +
-  geom_line(aes(x=PC_NUMBER, y = PVE, group = 1)) + 
-  geom_point(aes(x=PC_NUMBER, y = PVE, group = 1)) +
+  geom_line(aes(x=PC_NUMBER, y = PVE, group = 1), color = ml_green_dark) + 
+  geom_point(aes(x=PC_NUMBER, y = PVE, group = 1), color = ml_green_medium, size = 2) +
   # geom_line(aes(x=PC_NUMBER, y = CPVE, group = 1), color = bb_blue_medium) + 
   # geom_point(aes(x=PC_NUMBER, y = CPVE, group = 1), color = bb_blue_medium) +
   theme_thesis +
   theme(panel.grid.major.x = element_line(color = "grey90", size = 0.5)) +
-  ylab("Proportion of variance explained") +
-  xlab("Number of principal components")
-
+  scale_x_continuous(breaks = 1:10, labels = 1:10) +
+  ylab("Proportion of Variance Explained") +
+  xlab("Number of Principal Components")
+dev.off()
 
 
 
@@ -260,127 +283,130 @@ data_FAVAR <- data_training %>%
 
 
 ## Visualize loadings =====================================================
+# Visualizations via Loading
+pca_loadings_relevant <- pca_loadings %>%
+  mutate(VARIABLE = map(VARIABLE, ~ gsub("_", "\\\\_", .))) %>% 
+  unnest() %>% 
+  select(VARIABLE, GROUP, everything()) %>% 
+  mutate(VARIABLE = factor(VARIABLE, levels = VARIABLE),
+         GROUP = factor(GROUP, levels = unique(GROUP))) %>%
+  select(1:(factor_n+2)) %>%
+  melt(value.name = "LOADING") %>%
+  as_tibble() %>%
+  rename(PC=variable)
+
+tikz("plot_load.tex",
+     height = 6,
+     width = 6)
+pca_loadings_relevant %>%
+  #filter(PC == "PC1") %>%
+  ggplot()+
+  geom_bar(aes(x = VARIABLE, y = LOADING, fill = GROUP),
+           color = "white", 
+           stat = "identity",
+           width = 1
+           ) +
+  theme_thesis +
+  theme(axis.text.x = element_text(angle = 45,
+                                   hjust = 1,
+                                   #vjust= 0.25,
+                                   size = 3),
+        panel.grid.major.x = element_line(color = "grey90", size = 0.5),
+        legend.position="top",
+        legend.text=element_text(size=6)) +
+  facet_wrap(~PC, nrow = 2) +
+  ylab("Loadings") +
+  xlab("Features") +
+  #scale_fill_viridis(discrete = TRUE)
+  scale_fill_manual(values = function_gradient_redTOblueTOgreen(12)) +
+  guides(fill=guide_legend(title = "Group",
+                           title.position = "left",
+                           nrow=3,
+                           byrow=TRUE))
+
+dev.off()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Visualizations via R^2
-# pca_loadings_relevant <- pca_loadings %>% 
-#   mutate(VARIABLE = factor(VARIABLE, levels = VARIABLE)) %>% 
-#   select(1:(factor_n+1)) %>% 
-#   melt(value.name = "LOADING") %>% 
-#   as_tibble() %>% 
-#   rename(PC=variable)
-# 
-# pca_loadings_plot1 <- pca_loadings_relevant %>% 
-#   filter(PC == "PC1") %>% 
-#   ggplot()+
-#   geom_bar(aes(x = VARIABLE, y = LOADING), stat = "identity") +
-#   theme_thesis +
-#   theme(axis.text.x = element_text(angle = 90, 
-#                                    hjust = 1,
-#                                    vjust= 0.25,
-#                                    size = 5),
-#         plot.margin=unit(c(1,1,4,1.2),"cm"),
-#         panel.grid.major.x = element_line(color = "grey90", size = 0.5),
-#         axis.title.x = element_blank()) +
-#   annotate("segment", x=id+0.5, y=rep(-0.45, length(id)), xend=id+0.5, yend=rep(-0.23, length(id)),
-#            col="black") +
-#   annotate("text", x=id2, y=rep(-0.44, length(id)),
-#           label=id_label, size = 2, hjust = "bottom",
-#           fontface = "bold", angle = 90) +
-#   coord_cartesian(xlim = c(0,dim(pca_loadings)[1]), 
-#                   ylim = c(min(pca_loadings %>% select(2:max(factor_n,2))),
-#                            max(pca_loadings %>% select(2:max(factor_n,2)))), 
-#                   expand = TRUE, 
-#                   clip = "off")
-# 
-# pca_loadings_plot2 <- pca_loadings_relevant %>% 
-#   filter(PC == "PC2") %>% 
-#   ggplot()+
-#   geom_bar(aes(x = VARIABLE, y = LOADING), stat = "identity") +
-#   theme_thesis +
-#   theme(axis.text.x = element_text(angle = 90, 
-#                                    hjust = 1,
-#                                    vjust= 0.25,
-#                                    size = 5),
-#         plot.margin=unit(c(1,1,4,1.2),"cm"),
-#         panel.grid.major.x = element_line(color = "grey90", size = 0.5),
-#         axis.title.x = element_blank()) +
-#   annotate("segment", x=id+0.5, y=rep(-0.45, length(id)), xend=id+0.5, yend=rep(-0.23, length(id)),
-#            col="black") +
-#   annotate("text", x=id2, y=rep(-0.44, length(id)),
-#            label=id_label, size = 2, hjust = "bottom",
-#            fontface = "bold", angle = 90) +
-#   coord_cartesian(xlim = c(0,dim(pca_loadings)[1]), 
-#                   ylim = c(min(pca_loadings %>% select(2:max(factor_n,2))),
-#                            max(pca_loadings %>% select(2:max(factor_n,2)))), 
-#                   expand = TRUE, 
-#                   clip = "off")
-# 
-# grid.arrange(pca_loadings_plot1,
-#              pca_loadings_plot2,
-#              nrow=2)
-# 
-# 
-# # Visualizations via R^2
-# data_R2 <- pca_scores %>% 
-#   select(1:factor_n) %>% 
-#   bind_cols(feature_space)
-# 
-# data_R2_PC1 <- tibble("VARIABLE" = colnames(feature_space)) %>% 
-#   mutate(DATA = map(VARIABLE, function(x) data_R2[,c("PC1",x)]),
-#          LM = map(DATA, function(x) lm(PC1~., data = x)),
-#          R2 = map(LM, function(x) summary(x)$r.squared)) %>% 
-#   select(VARIABLE, R2) %>% 
-#   unnest()
-# 
-# data_R2_PC1 %>% 
-#   ggplot()+
-#   geom_bar(aes(x = VARIABLE, y = R2), stat = "identity") +
-#   theme_thesis +
-#   theme(axis.text.x = element_text(angle = 90, 
-#                                    hjust = 1,
-#                                    vjust= 0.25,
-#                                    size = 5),
-#         plot.margin=unit(c(1,1,4,1.2),"cm"),
-#         panel.grid.major.x = element_line(color = "grey90", size = 0.5),
-#         axis.title.x = element_blank()) +
-#   annotate("segment", x=id+0.5, y=rep(-0.5, length(id)), xend=id+0.5, yend=rep(0.8, length(id)),
-#            col="black") +
-#   annotate("text", x=id2, y=rep(-0.49, length(id)),
-#            label=id_label, size = 2, hjust = "bottom",
-#            fontface = "bold", angle = 90) +
-#   coord_cartesian(xlim = c(0,dim(data_R2_PC1)[1]), 
-#                   ylim = c(min(data_R2_PC1 %>% select(R2)),
-#                            max(data_R2_PC1 %>% select(R2))), 
-#                   expand = TRUE, 
-#                   clip = "off")
-# 
-# data_R2_PC2 <- tibble("VARIABLE" = colnames(feature_space)) %>% 
-#   mutate(DATA = map(VARIABLE, function(x) data_R2[,c("PC2",x)]),
-#          LM = map(DATA, function(x) lm(PC2~., data = x)),
-#          R2 = map(LM, function(x) summary(x)$r.squared)) %>% 
-#   select(VARIABLE, R2) %>% 
-#   unnest()
-# 
-# data_R2_PC2 %>% 
-#   ggplot()+
-#   geom_bar(aes(x = VARIABLE, y = R2), stat = "identity") +
-#   theme_thesis +
-#   theme(axis.text.x = element_text(angle = 90, 
-#                                    hjust = 1,
-#                                    vjust= 0.25,
-#                                    size = 5),
-#         plot.margin=unit(c(1,1,4,1.2),"cm"),
-#         panel.grid.major.x = element_line(color = "grey90", size = 0.5),
-#         axis.title.x = element_blank()) +
-#   annotate("segment", x=id+0.5, y=rep(-0.2, length(id)), xend=id+0.5, yend=rep(0.35, length(id)),
-#            col="black") +
-#   annotate("text", x=id2, y=rep(-0.19, length(id)),
-#            label=id_label, size = 2, hjust = "bottom",
-#            fontface = "bold", angle = 90) +
-#   coord_cartesian(xlim = c(0,dim(data_R2_PC1)[1]), 
-#                   ylim = c(min(data_R2_PC2 %>% select(R2)),
-#                            max(data_R2_PC2 %>% select(R2))), 
-#                   expand = TRUE, 
-#                   clip = "off")
+data_R2 <- pca_scores %>%
+  select(1:factor_n) %>%
+  bind_cols(feature_space)
+
+data_R2_PC1 <- tibble("VARIABLE" = colnames(feature_space)) %>%
+  mutate(DATA = map(VARIABLE, function(x) data_R2[,c("PC1",x)]),
+         LM = map(DATA, function(x) lm(PC1~., data = x)),
+         R2 = map(LM, function(x) summary(x)$r.squared)) %>%
+  select(VARIABLE, R2) %>%
+  unnest()
+
+data_R2_PC1 %>%
+  ggplot()+
+  geom_bar(aes(x = VARIABLE, y = R2), stat = "identity") +
+  theme_thesis +
+  theme(axis.text.x = element_text(angle = 90,
+                                   hjust = 1,
+                                   vjust= 0.25,
+                                   size = 5),
+        plot.margin=unit(c(1,1,4,1.2),"cm"),
+        panel.grid.major.x = element_line(color = "grey90", size = 0.5),
+        axis.title.x = element_blank()) +
+  annotate("segment", x=id+0.5, y=rep(-0.5, length(id)), xend=id+0.5, yend=rep(0.8, length(id)),
+           col="black") +
+  annotate("text", x=id2, y=rep(-0.49, length(id)),
+           label=id_label, size = 2, hjust = "bottom",
+           fontface = "bold", angle = 90) +
+  coord_cartesian(xlim = c(0,dim(data_R2_PC1)[1]),
+                  ylim = c(min(data_R2_PC1 %>% select(R2)),
+                           max(data_R2_PC1 %>% select(R2))),
+                  expand = TRUE,
+                  clip = "off")
+
+data_R2_PC2 <- tibble("VARIABLE" = colnames(feature_space)) %>%
+  mutate(DATA = map(VARIABLE, function(x) data_R2[,c("PC2",x)]),
+         LM = map(DATA, function(x) lm(PC2~., data = x)),
+         R2 = map(LM, function(x) summary(x)$r.squared)) %>%
+  select(VARIABLE, R2) %>%
+  unnest()
+
+data_R2_PC2 %>%
+  ggplot()+
+  geom_bar(aes(x = VARIABLE, y = R2), stat = "identity") +
+  theme_thesis +
+  theme(axis.text.x = element_text(angle = 90,
+                                   hjust = 1,
+                                   vjust= 0.25,
+                                   size = 5),
+        plot.margin=unit(c(1,1,4,1.2),"cm"),
+        panel.grid.major.x = element_line(color = "grey90", size = 0.5),
+        axis.title.x = element_blank()) +
+  annotate("segment", x=id+0.5, y=rep(-0.2, length(id)), xend=id+0.5, yend=rep(0.35, length(id)),
+           col="black") +
+  annotate("text", x=id2, y=rep(-0.19, length(id)),
+           label=id_label, size = 2, hjust = "bottom",
+           fontface = "bold", angle = 90) +
+  coord_cartesian(xlim = c(0,dim(data_R2_PC1)[1]),
+                  ylim = c(min(data_R2_PC2 %>% select(R2)),
+                           max(data_R2_PC2 %>% select(R2))),
+                  expand = TRUE,
+                  clip = "off")
 
 # Model selection ---------------------------------------------------------
 # Plot non-stationary time series
@@ -802,3 +828,31 @@ est2 %>%
   mutate(DIFF = abs(MODEL-OWN)) %>% 
   mutate(MAX=max(DIFF),
          MIN =min(DIFF))
+
+## Visualization loadings (old) ===========================================
+
+
+pca_loadings_relevant %>%
+  filter(PC == "PC1") %>%
+  ggplot()+
+  geom_bar(aes(x = VARIABLE, y = LOADING), stat = "identity", fill = ml_green_dark) +
+  theme_thesis +
+  theme(axis.text.x = element_text(angle = 90,
+                                   hjust = 1,
+                                   vjust= 0.25,
+                                   size = 5),
+        plot.margin=unit(c(0.5,0.5,4,0.5),"cm"),
+        panel.grid.major.x = element_line(color = "grey90", size = 0.5),
+        axis.title.x = element_blank()) +
+  ylab("Loadings") +
+  xlab("Features") +
+  annotate("segment", x=id+0.5, y=rep(-0.45, length(id)), xend=id+0.5, yend=rep(-0.23, length(id)),
+           col="black") +
+  annotate("text", x=id2, y=rep(-0.44, length(id)),
+           label=id_label, size = 1.5, hjust = "bottom",
+           fontface = "bold", angle = 90) +
+  coord_cartesian(xlim = c(0,dim(pca_loadings)[1]),
+                  ylim = c(min(pca_loadings %>% select(2:max(factor_n,2))),
+                           max(pca_loadings %>% select(2:max(factor_n,2)))),
+                  expand = TRUE,
+                  clip = "off")

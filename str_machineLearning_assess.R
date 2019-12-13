@@ -19,11 +19,15 @@ if(rf_assess){
   if(Qrtr){
     load(file.path(getwd(), "Results", "Crisis", "RF", "performance_benchmark_rf_Q.RData"))
     load(file = file.path(getwd(), "Results", "Crisis", "RF", "tuning_results_rf.ranger_Q.RData"))
+    load(file.path(getwd(), "Results", "Crisis", "RF", "performance_results_rf_Q.RData"))
+    load(file = file.path(getwd(), "Results", "Crisis", "RF", "finetuning_results_rf_Q.RData"))
   }
   
   if(Yr){
     load(file.path(getwd(), "Results", "Crisis", "RF", "performance_benchmark_rf_Y.RData"))
     load(file = file.path(getwd(), "Results", "Crisis", "RF", "tuning_results_rf.rf_Y.RData"))
+    load(file.path(getwd(), "Results", "Crisis", "RF", "performance_results_rf_Y.RData"))
+    load(file = file.path(getwd(), "Results", "Crisis", "RF", "finetuning_results_rf_Y.RData"))
   }
 }
 
@@ -31,11 +35,15 @@ if(gb_assess){
   if(Qrtr){
     load(file.path(getwd(), "Results", "Crisis", "GB", "performance_benchmark_gb_Q.RData"))
     load(file = file.path(getwd(), "Results", "Crisis", "GB", "tuning_results_gb.xgb_Q.RData"))
+    load(file.path(getwd(), "Results", "Crisis", "GB", "performance_results_gb_Q.RData"))
+    load(file = file.path(getwd(), "Results", "Crisis", "GB", "finetuning_results_gb_Q.RData"))
   }
   
   if(Yr){
     load(file.path(getwd(), "Results", "Crisis", "GB", "performance_benchmark_gb_Y.RData"))
     load(file = file.path(getwd(), "Results", "Crisis", "GB", "tuning_results_gb.gbm_Y.RData"))
+    load(file.path(getwd(), "Results", "Crisis", "GB", "performance_results_gb_Y.RData"))
+    load(file = file.path(getwd(), "Results", "Crisis", "GB", "finetuning_results_gb_Y.RData"))
   }
 }
 
@@ -55,6 +63,8 @@ if(sv_assess){
 # Assessing results -------------------------------------------------------
 
 
+
+if(rf_assess){
 ## RF =====================================================================
 ### Benchmarking analysis #################################################
 
@@ -72,7 +82,7 @@ performance_benchmark_rf$learners$ranger$par.vals %>%
 
 
 # Hyperparameters of best learner
-best_learner_rf <- generateHyperParsEffectData(tuning_results_rf.rf, 
+best_learner_rf <- generateHyperParsEffectData(tuning_results_rf.ranger, 
                                                include.diagnostics = FALSE, 
                                                trafo = TRUE, 
                                                partial.dep = TRUE) %>% 
@@ -137,89 +147,169 @@ hyperparameters_rf <- generateHyperParsEffectData(finetuning_results_rf,
 
 ### Visualizations ########################################################
 # Line graph of number of trees from random search
-best_learner_rf %>% 
-  mutate(INT_NODESIZE = cut(nodesize, breaks = seq(1,83,length.out = 9))) %>%  
-  group_by(INT_NODESIZE) %>% 
-  summarise(MEAN_MSE = mean(mse.test.mean)) %>% 
-  ggplot(aes(x = INT_NODESIZE, y = MEAN_MSE, group = 1)) + 
-  geom_point() + 
-  geom_path() +
-  theme_thesis
-# Interpretation: algorithm clearly favoring small trees
+# Hyperparameters of best learner
+
+best_learner_rf <- generateHyperParsEffectData(tuning_results_rf.ranger, 
+                                               include.diagnostics = FALSE, 
+                                               trafo = TRUE, 
+                                               partial.dep = TRUE) %>% 
+  .$data %>% 
+  as_tibble() 
+
+
+
+# best_learner_rf %>% 
+#   mutate(INT_NODESIZE = cut(min.node.size, breaks = seq(1,95,length.out = 9))) %>%  
+#   group_by(INT_NODESIZE) %>% 
+#   summarise(MEAN_MSE = mean(rmse.test.rmse)) %>% 
+#   ggplot(aes(x = INT_NODESIZE, y = MEAN_MSE, group = 1)) + 
+#   geom_point() + 
+#   geom_path() +
+#   theme_thesis
+# # Interpretation: algorithm clearly favoring small trees
 
 
 
 
 # Heat map from random search
+tikz("plot_spaceRF.tex",
+     height = 4,
+     width = 6)
+
 best_learner_rf %>% 
-  mutate(INT_TREE = cut(ntree, breaks = seq(0,1000,length.out = 11)),
-         INT_NODESIZE = cut(nodesize, breaks = seq(1,83,length.out = 9))) %>%  
+  mutate(INT_TREE = cut(num.trees, breaks = c(1,seq(100,1000,length.out = 10))),
+         INT_NODESIZE = cut(min.node.size, breaks = c(1,15,25,35,45,55,65,75,85,95))) %>%  
   group_by(INT_TREE, INT_NODESIZE) %>% 
-  summarise(MEAN_MSE = mean(mse.test.mean)) %>% 
+  summarise(MEAN_MSE = mean(rmse.test.rmse)) %>% 
   ungroup() %>% 
   ggplot(aes(x = INT_NODESIZE, y = INT_TREE, fill = MEAN_MSE, group = 1)) +
   geom_tile() + 
-  scale_fill_gradient(low = "green", high = "red") +
-  theme_thesis
+  scale_fill_gradient(name = "RMSE",
+                      low = ggplot2::alpha(ml_green_medium,1), 
+                      high = ggplot2::alpha(bb_red_medium,1)) +
+  theme_thesis +
+  theme(panel.grid.major.x = element_line(color = "grey90", size = 0.5)) +
+  #guides(fill=guide_legend(title = "RMSE")) +
+  xlab("Minimum Terminal Nodesize") +
+  ylab("Number of Trees")
+dev.off()
 # Interpretation: algorithm clearly favoring small trees and rather indifferent regarding tree size
 
 
 
 
-# Heat map from grid search
-hyperparameters_rf %>% 
-  filter(mtry == finetuning_results_rf$x$mtry) %>% 
-  ggplot() +
-  scale_x_continuous(breaks=ceiling(seq(finetuning_results_rf$opt.path$par.set$pars$ntree$lower,
-                                        finetuning_results_rf$opt.path$par.set$pars$ntree$upper,length.out = 11)), 
-                     labels=ceiling(seq(finetuning_results_rf$opt.path$par.set$pars$ntree$lower,
-                                        finetuning_results_rf$opt.path$par.set$pars$ntree$upper,length.out = 11))) +
-  scale_y_continuous(breaks=seq(finetuning_results_rf$opt.path$par.set$pars$nodesize$lower,
-                                finetuning_results_rf$opt.path$par.set$pars$nodesize$upper,length.out = 11), 
-                     labels=seq(finetuning_results_rf$opt.path$par.set$pars$nodesize$lower,
-                                finetuning_results_rf$opt.path$par.set$pars$nodesize$upper,length.out = 11)) +
-  geom_tile(aes(x = ntree, y = nodesize, fill = mse.test.mean)) + 
-  scale_fill_gradient(low = "green", high = "red") +
-  theme_thesis
-# Interpretation: no insight
+# # Heat map from grid search
+# hyperparameters_rf %>% 
+#   filter(mtry == finetuning_results_rf$x$mtry) %>% 
+#   ggplot() +
+#   scale_x_continuous(breaks=ceiling(seq(finetuning_results_rf$opt.path$par.set$pars$ntree$lower,
+#                                         finetuning_results_rf$opt.path$par.set$pars$ntree$upper,length.out = 11)), 
+#                      labels=ceiling(seq(finetuning_results_rf$opt.path$par.set$pars$ntree$lower,
+#                                         finetuning_results_rf$opt.path$par.set$pars$ntree$upper,length.out = 11))) +
+#   scale_y_continuous(breaks=seq(finetuning_results_rf$opt.path$par.set$pars$nodesize$lower,
+#                                 finetuning_results_rf$opt.path$par.set$pars$nodesize$upper,length.out = 11), 
+#                      labels=seq(finetuning_results_rf$opt.path$par.set$pars$nodesize$lower,
+#                                 finetuning_results_rf$opt.path$par.set$pars$nodesize$upper,length.out = 11)) +
+#   geom_tile(aes(x = ntree, y = nodesize, fill = mse.test.mean)) + 
+#   scale_fill_gradient(low = "green", high = "red") +
+#   theme_thesis
+# # Interpretation: no insight
 
 
 
-# Line graph of number of trees from grid search
-hyperparameters_rf %>% 
-  group_by(ntree) %>% 
-  summarise(MEAN_MSE = mean(mse.test.mean)) %>% 
-  ggplot(aes(x = ntree, y = MEAN_MSE)) + 
-  geom_point() + 
-  geom_path() + 
-  theme_thesis
-# Interpretation: no insight
+# # Line graph of number of trees from grid search
+# hyperparameters_rf %>% 
+#   group_by(num.trees) %>% 
+#   summarise(MEAN_RMSE = mean(rmse.test.rmse)) %>% 
+#   ggplot(aes(x = num.trees, y = MEAN_RMSE)) + 
+#   geom_point() + 
+#   geom_path() + 
+#   theme_thesis
+# # Interpretation: no insight
+
+
+
 
 
 # Variable importance measure
+# Load results
+load(file.path(getwd(), "Results", "Crisis", "RF", "performance_results_rf_Q.RData"))
+performance_results_rf_Q <- performance_results_rf
+load(file.path(getwd(), "Results", "Crisis", "RF", "performance_results_rf_Y.RData"))
+performance_results_rf_Y <- performance_results_rf
+
+# Quarter
 vim_rf <- matrix(data = NA, 
-                 nrow = length(performance_results_rf$models), 
-                 ncol = length(performance_results_rf$models[[1]]$features),
-                 dimnames = list(1:length(performance_results_rf$models),
-                                 performance_results_rf$models[[1]]$features)) %>% 
+                 nrow = length(performance_results_rf_Q$models), 
+                 ncol = length(performance_results_rf_Q$models[[1]]$features),
+                 dimnames = list(1:length(performance_results_rf_Q$models),
+                                 performance_results_rf_Q$models[[1]]$features)) %>% 
   as_tibble()
-for (i in 1:length(performance_results_rf$models)){
-vim_rf[i,] <- bind_rows(getFeatureImportance(performance_results_rf$models[[i]],
+for (i in 1:length(performance_results_rf_Q$models)){
+vim_rf[i,] <- bind_rows(getFeatureImportance(performance_results_rf_Q$models[[i]],
                                  type = 2)$res) 
 }
 
-sapply(vim_rf, mean) %>% 
+imp_rf_Q <- sapply(vim_rf, mean) %>% 
   enframe(name = "VARIABLE", value = "MEAN_DECREASE_RSS") %>% 
+  mutate(VARIABLE = map(VARIABLE, ~ gsub("_", "\\\\_", .)),
+         VARIABLE = map(VARIABLE, ~ gsub("\\.\\.1", "\\\\textsubscript\\{\\$t-1\\$\\}", .))) %>% 
+  unnest() %>% 
   arrange(-MEAN_DECREASE_RSS) %>% 
-  top_n(10) %>% 
+  top_n(10,MEAN_DECREASE_RSS) %>% 
+  mutate(HORIZON = "1-quarter-ahead")
+
+
+# Year
+vim_rf <- matrix(data = NA, 
+                 nrow = length(performance_results_rf_Y$models), 
+                 ncol = length(performance_results_rf_Y$models[[1]]$features),
+                 dimnames = list(1:length(performance_results_rf_Y$models),
+                                 performance_results_rf_Y$models[[1]]$features)) %>% 
+  as_tibble()
+for (i in 1:length(performance_results_rf_Y$models)){
+  vim_rf[i,] <- bind_rows(getFeatureImportance(performance_results_rf_Y$models[[i]],
+                                               type = 2)$res) 
+}
+
+imp_rf_Y <- sapply(vim_rf, mean) %>% 
+  enframe(name = "VARIABLE", value = "MEAN_DECREASE_RSS") %>% 
+  mutate(VARIABLE = map(VARIABLE, ~ gsub("_", "\\\\_", .)),
+         VARIABLE = map(VARIABLE, ~ gsub("\\.\\.1", "\\\\textsubscript\\{\\$t-4\\$\\}", .))) %>% 
+  unnest() %>% 
+  arrange(-MEAN_DECREASE_RSS) %>% 
+  top_n(10,MEAN_DECREASE_RSS) %>% 
+  mutate(HORIZON = "1-year-ahead")
+
+
+
+
+
+tikz("plot_varimpRF.tex",
+     height = 4,
+     width = 6)
+
+imp_rf_Q %>% 
+  bind_rows(imp_rf_Y) %>% 
   ggplot() +
-  geom_col(aes(y = MEAN_DECREASE_RSS, x = reorder(VARIABLE, MEAN_DECREASE_RSS))) +
+  geom_col(aes(y = MEAN_DECREASE_RSS, x = reorder_within(VARIABLE, MEAN_DECREASE_RSS, HORIZON)), 
+           fill = ml_green_dark) +
   coord_flip() + 
-  theme_thesis
-# Interpretation:  
+  scale_x_reordered() +
+  facet_wrap(~HORIZON, 
+             scales = "free",
+             nrow = 2) +
+  theme_thesis +
+  theme(panel.grid.major.x = element_line(color = "grey90", size = 0.5)) +
+  xlab("Feature") +
+  ylab("Mean Decrease in Impurity")
 
+dev.off()
 
+ 
+}
 
+if(gb_assess){
 ## GB =====================================================================
 ### Benchmarking analysis #################################################
 
@@ -305,8 +395,123 @@ hyperparameters_sv <- generateHyperParsEffectData(finetuning_results_gb,
 
 
 
+### Visualizations ########################################################
+best_learner_gb <- generateHyperParsEffectData(tuning_results_gb.xgb, 
+                                               include.diagnostics = FALSE, 
+                                               trafo = TRUE, 
+                                               partial.dep = TRUE) %>% 
+  .$data %>% 
+  as_tibble() 
 
 
+
+# Heat map from random search
+tikz("plot_spaceGB.tex",
+     height = 4,
+     width = 6)
+
+best_learner_gb %>% 
+  mutate(INT_TREE = cut(nrounds, breaks = c(1,seq(100,1000,length.out = 10))),
+         #ETA = cut(eta, breaks = c(0.001,0.005,0.01,0.05,0.1))
+         ETA = cut(max_depth, breaks = c(1,2,3,4,5,6,7,8,9,10))) %>%  
+  group_by(INT_TREE, ETA) %>% 
+  summarise(MEAN_MSE = mean(rmse.test.rmse)) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = ETA, y = INT_TREE, fill = MEAN_MSE, group = 1)) +
+  geom_tile() + 
+  scale_fill_gradient(name = "RMSE",
+                      low = ggplot2::alpha(ml_green_medium,1), 
+                      high = ggplot2::alpha(bb_red_medium,1)) +
+  theme_thesis +
+  theme(panel.grid.major.x = element_line(color = "grey90", size = 0.5)) +
+  #guides(fill=guide_legend(title = "RMSE")) +
+  xlab("Maximum Tree Depth") +
+  ylab("Number of Trees")
+dev.off()
+# Interpretation: algorithm clearly favoring larger trees and rather indifferent regarding tree size
+
+
+
+# Variable importance measure
+# Load results
+load(file.path(getwd(), "Results", "Crisis", "GB", "performance_results_gb_Q.RData"))
+performance_results_gb_Q <- performance_results_gb
+load(file.path(getwd(), "Results", "Crisis", "GB", "performance_results_gb_Y.RData"))
+performance_results_gb_Y <- performance_results_gb
+
+# Quarter
+vim_gb <- matrix(data = NA, 
+                 nrow = length(performance_results_gb_Q$models), 
+                 ncol = length(performance_results_gb_Q$models[[1]]$features),
+                 dimnames = list(1:length(performance_results_gb_Q$models),
+                                 performance_results_gb_Q$models[[1]]$features)) %>% 
+  as_tibble()
+for (i in 1:length(performance_results_gb_Q$models)){
+  vim_gb[i,] <- bind_rows(getFeatureImportance(performance_results_gb_Q$models[[i]])$res) 
+}
+
+imp_gb_Q <- sapply(vim_gb, mean) %>% 
+  enframe(name = "VARIABLE", value = "MEAN_DECREASE_RSS") %>% 
+  mutate(VARIABLE = map(VARIABLE, ~ gsub("_", "\\\\_", .)),
+         VARIABLE = map(VARIABLE, ~ gsub("\\.\\.1", "\\\\textsubscript\\{\\$t-1\\$\\}", .))) %>% 
+  unnest() %>% 
+  arrange(-MEAN_DECREASE_RSS) %>% 
+  mutate(MEAN_DECREASE_RSS = rescale(MEAN_DECREASE_RSS)) %>% 
+  top_n(10,MEAN_DECREASE_RSS) %>% 
+  mutate(HORIZON = "1-quarter-ahead")
+  
+
+
+# Year
+vim_gb <- matrix(data = NA, 
+                 nrow = length(performance_results_gb_Y$models), 
+                 ncol = length(performance_results_gb_Y$models[[1]]$features),
+                 dimnames = list(1:length(performance_results_gb_Y$models),
+                                 performance_results_gb_Y$models[[1]]$features)) %>% 
+  as_tibble()
+for (i in 1:length(performance_results_gb_Y$models)){
+  vim_gb[i,] <- bind_rows(getFeatureImportance(performance_results_gb_Y$models[[i]])$res) 
+}
+
+imp_gb_Y <- sapply(vim_gb, mean) %>% 
+  enframe(name = "VARIABLE", value = "MEAN_DECREASE_RSS") %>% 
+  mutate(VARIABLE = map(VARIABLE, ~ gsub("_", "\\\\_", .)),
+         VARIABLE = map(VARIABLE, ~ gsub("\\.\\.1", "\\\\textsubscript\\{\\$t-4\\$\\}", .))) %>% 
+  unnest() %>% 
+  arrange(-MEAN_DECREASE_RSS) %>% 
+  mutate(MEAN_DECREASE_RSS = rescale(MEAN_DECREASE_RSS)) %>% 
+  top_n(10,MEAN_DECREASE_RSS) %>% 
+  mutate(HORIZON = "1-year-ahead") 
+
+
+
+
+
+tikz("plot_varimpGB.tex",
+     height = 4,
+     width = 6)
+
+imp_gb_Q %>% 
+  bind_rows(imp_gb_Y) %>% 
+  ggplot() +
+  geom_col(aes(y = MEAN_DECREASE_RSS, x = reorder_within(VARIABLE, MEAN_DECREASE_RSS, HORIZON)), 
+           fill = ml_green_dark) +
+  coord_flip() + 
+  scale_x_reordered() +
+  facet_wrap(~HORIZON, 
+             scales = "free",
+             nrow = 2) +
+  theme_thesis +
+  theme(panel.grid.major.x = element_line(color = "grey90", size = 0.5)) +
+  xlab("Feature") +
+  ylab("Relative Feature Influence")
+
+dev.off()
+
+  
+}
+
+if(sv_assess){
 ## SV =====================================================================
 ### Benchmarking analysis #################################################
 # Best performer from set of same machine learning class
@@ -383,40 +588,46 @@ hyperparameters_sv <- generateHyperParsEffectData(finetuning_results_sv,
 
 
 
-
-# HERE: good but how is the value for the raster calculated? mean? Problem: Many observations which fall in the same raster. So which value for coloring raster is tken?
-best_learner_sv %>% 
-  filter(kernel == "sigmoid") %>% 
-  mutate(int_cost = cut(cost, breaks = 10^seq(-5,4,length.out = 10)),
-         int_epsilon = cut(epsilon, breaks = 10^seq(-9,0,length.out = 10))) %>% 
-  ggplot() +
-  #scale_y_log10(breaks=10^seq(-5,4,length.out = 10),labels=10^seq(-5,4,length.out = 10)) +
-  #scale_x_log10(breaks=10^seq(-9,0,length.out = 10),labels=10^seq(-9,0,length.out = 10)) +
-  geom_tile(aes(x = int_epsilon, y = int_cost, fill = mse.test.mean)) + 
-  scale_fill_gradient(low = "green", high = "red", trans = "log")
-
-
-best_learner_sv %>% 
-  filter(kernel == "sigmoid") %>% 
-  group_by(epsilon, cost) %>% 
-  summarise(mse.test.mean = mean(mse.test.mean)) %>% 
-  #filter(gamma == performance_benchmark_sv$learners$svm$par.vals$gamma) %>% 
-  ggplot() +
-  scale_x_log10(breaks=10^seq(-3,0,length.out = 4), labels=10^seq(-3,0,length.out = 4)) +
-  scale_y_log10(breaks=10^seq(-3,1,length.out = 5), labels=10^seq(-3,1,length.out = 5)) +
-  geom_tile(aes(x = epsilon, y = cost, fill = mse.test.mean)) + 
-  scale_fill_gradient(low = "green", high = "red", trans = "log")
+best_learner_svr <- generateHyperParsEffectData(tuning_results_sv.svm, 
+                                               include.diagnostics = FALSE, 
+                                               trafo = TRUE, 
+                                               partial.dep = TRUE) %>% 
+  .$data %>% 
+  as_tibble() 
 
 
 
-shyperparameters_sv %>% 
-  filter(kernel == "sigmoid") %>% 
-  ggplot() +
-  scale_x_continuous(breaks=seq(epsilon_low,epsilon_up,length.out = 11), labels=seq(epsilon_low,epsilon_up,length.out = 11)) +
-  scale_y_continuous(breaks=seq(cost_low,cost_up,length.out = 11), labels=seq(cost_low,cost_up,length.out = 11)) +
-  geom_tile(aes(x = epsilon, y = cost, fill = mse.test.mean)) + 
-  scale_fill_gradient(low = "green", high = "red")
+# Heat map from random search
+tikz("plot_spaceSVR.tex",
+     height = 4,
+     width = 6)
+
+best_learner_svr %>% 
+  filter(kernel=="sigmoid") %>% 
+  mutate(COST = cut(cost, breaks = c(0.01,0.1,1,10,100,1000,10000)),
+         #ETA = cut(eta, breaks = c(0.001,0.005,0.01,0.05,0.1))
+         EPS = cut(epsilon, breaks = c(0.00001,0.0001,0.001,0.01,0.1,1))) %>%  
+  group_by(COST, EPS) %>% 
+  summarise(MEAN_MSE = mean(rmse.test.rmse)) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = EPS, y = COST, fill = MEAN_MSE, group = 1)) +
+  geom_tile() + 
+  scale_fill_gradient(name = "RMSE",
+                      low = ggplot2::alpha(ml_green_medium,1), 
+                      high = ggplot2::alpha(bb_red_medium,1),
+                      trans = "log",
+                      labels=trans_format("identity", function(x) round(x,0))) +
+  #scale_fill_continuous(labels=trans_format("identity", function(x) round(x,0))) +
+  theme_thesis +
+  theme(panel.grid.major.x = element_line(color = "grey90", size = 0.5)) +
+  #guides(fill=guide_legend(title = "RMSE")) +
+  xlab("Epsilon") +
+  ylab("Regularization Parameter")
+dev.off()
+# Interpretation: algorithm clearly favoring larger trees and rather indifferent regarding tree size
 
 
+  
+}
 
 # -------------------------------------------------------------------------

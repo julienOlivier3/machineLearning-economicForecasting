@@ -8,4 +8,4 @@ Macroeconomic forecasters often show a poor track record in producing reliable p
 Macroeconomic time series data available via the Federal Reserve Bank of St. Louis ([FRED Database](https://research.stlouisfed.org/econ/mccracken/fred-databases/)).
 
 **Presentation**:<br/>
-Presentation slides of the thesis can be found [here](https://raw.githack.com/julienOlivier3/DataFramework_EconomicCrises/main/pres.pdf).
+Presentation slides of the thesis can be found [here](https://raw.githack.com/julienOlivier3/machineLearning-economicForecasting/master/Economics_DataScience.pdf).

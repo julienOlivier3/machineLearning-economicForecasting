@@ -57,7 +57,9 @@ packages <- c("xlsx",                                                      # rea
               "ggthemes",                                                  # additional ggplot themes (e.g. economist theme)
               "corrplot",                                                  # correlation plot
               "ggcorrplot",                                                # correlation plot
-              "tikzDevice"                                                 # for latex visualiztions
+              "tikzDevice",                                                # for latex visualiztions
+              "DiagrammeR",                                                # for flow charts
+              "pBrackets"                                                  # for in-plot brackets 
               )
 
 function_package(packages)
@@ -87,6 +89,7 @@ ml_green_light <- "seagreen2"
 function_gradient_blue <- colorRampPalette(c(bb_blue_light, bb_blue_dark))
 function_gradient_green <- colorRampPalette(c(ml_green_light, ml_green_dark))
 function_gradient_redTOgreen <- colorRampPalette(c(bb_red_dark, ml_green_dark))
+function_gradient_greenTOred <- colorRampPalette(c(ml_green_dark, bb_red_dark))
 function_gradient_redTOwhiteTOgreen <- colorRampPalette(c(bb_red_dark, "white", ml_green_dark))
 function_gradient_redTOblueTOgreen <- colorRampPalette(c(bb_red_dark, bb_blue_dark, ml_green_dark))
 
@@ -107,8 +110,8 @@ theme_thesis <- theme(
   axis.text.x = element_text(color = "black"),
   axis.text.y = element_text(color = "black"),
   #axis.title = element_text(size = 12, face = "bold", margin = margin(t = 0, r = 0, b = 0, l = 0, unit = "pt")),  # not working?
-  axis.title.y = element_text(size = 10, face = "bold", vjust = -.1),
-  axis.title.x = element_text(size = 10, face = "bold", vjust = -.1),
+  axis.title.y = element_text(size = 9, face = "bold", vjust = -.1),
+  axis.title.x = element_text(size = 9, face = "bold", vjust = -.1),
   plot.title = element_text(size = 12, hjust = 0),
   legend.key = element_blank(),
   axis.ticks = element_blank(),

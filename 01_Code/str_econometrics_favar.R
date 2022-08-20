@@ -242,7 +242,7 @@ pca_pve %>%
   filter(PC_NUMBER %in% 1:10) %>% 
   ggplot() +
   geom_line(aes(x=PC_NUMBER, y = PVE, group = 1), color = ml_green_dark) + 
-  geom_point(aes(x=PC_NUMBER, y = PVE, group = 1), color = ml_green_medium, size = 2) +
+  geom_point(aes(x=PC_NUMBER, y = PVE, group = 1), color = ml_green_dark, size = 2, alpha = 0.2) +
   # geom_line(aes(x=PC_NUMBER, y = CPVE, group = 1), color = bb_blue_medium) + 
   # geom_point(aes(x=PC_NUMBER, y = CPVE, group = 1), color = bb_blue_medium) +
   theme_thesis +

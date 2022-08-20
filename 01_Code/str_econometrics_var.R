@@ -11,10 +11,11 @@ training_end <- "2007 Q1"         # Set the last quarter of training data, the s
 VAR_variables <- c("REAL_GDP_GROWTH",
                    "HOUST",           # Housing Starts: Total: New Privately Owned Housing Units Started (Thousands of Units)
                    "AMDMN_OX",        # Real Manufacturers' New Orders: Durable Goods (Millions of 2012 Dollars), deflated by Core PCE
-                   #"S_P_500",         # S&P's Common Stock Price Index: Composite
+                   "S_P_500",         # S&P's Common Stock Price Index: Composite
                    "UMCSEN_TX",       # University of Michigan: Consumer Sentiment (Index 1st Quarter 1966=100)
                    "AWHMAN",          # Average Weekly Hours of Production and Nonsupervisory Employees: Manufacturing (Hours)
-                   "TB3SMFFM")        # 3-month treasury constant maturity rate and federal funds rate
+                   #"TB3SMFFM",        # 3-month treasury constant maturity rate and federal funds rate
+                   "T5YFFM")        
 
 # VAR_variables <- c("CPIAUCSL",
 #                    "FEDFUNDS",

@@ -182,7 +182,7 @@ plot_res_acf <- residual %>%
 plot_res_time <- residual %>% 
   ggplot() +
   geom_line(aes(x = DATE_QUARTER, y = RESIDUALS), color = ml_green_dark) +
-  xlab("Date") +
+  xlab("Year") +
   ylab("Residuals") +
   theme_thesis +
   theme(panel.grid.major.x = element_line(color = "grey90", size = 0.5))

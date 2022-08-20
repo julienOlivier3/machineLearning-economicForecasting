@@ -1,8 +1,8 @@
 # Steering ----------------------------------------------------------------
 setwd("J:\\Studium\\Master\\Masterthesis")
 
-rf_assess <- FALSE
-gb_assess <- FALSE
+rf_assess <- TRUE
+gb_assess <- TRUE
 sv_assess <- TRUE
 
 Qrtr <- TRUE
@@ -176,7 +176,8 @@ tikz("plot_spaceRF.tex",
      height = 4,
      width = 6)
 
-best_learner_rf %>% 
+#rf_tuning <- best_learner_rf %>%
+best_learner_rf %>%
   mutate(INT_TREE = cut(num.trees, breaks = c(1,seq(100,1000,length.out = 10))),
          INT_NODESIZE = cut(min.node.size, breaks = c(1,15,25,35,45,55,65,75,85,95))) %>%  
   group_by(INT_TREE, INT_NODESIZE) %>% 
@@ -257,7 +258,7 @@ imp_rf_Q <- sapply(vim_rf, mean) %>%
   unnest() %>% 
   arrange(-MEAN_DECREASE_RSS) %>% 
   top_n(10,MEAN_DECREASE_RSS) %>% 
-  mutate(HORIZON = "1-quarter-ahead")
+  mutate(HORIZON = "1-quarter ahead")
 
 
 # Year
@@ -279,7 +280,7 @@ imp_rf_Y <- sapply(vim_rf, mean) %>%
   unnest() %>% 
   arrange(-MEAN_DECREASE_RSS) %>% 
   top_n(10,MEAN_DECREASE_RSS) %>% 
-  mutate(HORIZON = "1-year-ahead")
+  mutate(HORIZON = "1-year ahead")
 
 
 
@@ -300,7 +301,9 @@ imp_rf_Q %>%
              scales = "free",
              nrow = 2) +
   theme_thesis +
-  theme(panel.grid.major.x = element_line(color = "grey90", size = 0.5)) +
+  theme(panel.grid.major.x = element_line(color = "grey90", size = 0.5),
+        axis.text.y = element_text(size = 8),
+        axis.text.x = element_text(size = 9)) +
   xlab("Feature") +
   ylab("Mean Decrease in Impurity")
 
@@ -410,6 +413,7 @@ tikz("plot_spaceGB.tex",
      height = 4,
      width = 6)
 
+#gb_tuning <- best_learner_gb %>% 
 best_learner_gb %>% 
   mutate(INT_TREE = cut(nrounds, breaks = c(1,seq(100,1000,length.out = 10))),
          #ETA = cut(eta, breaks = c(0.001,0.005,0.01,0.05,0.1))
@@ -458,7 +462,7 @@ imp_gb_Q <- sapply(vim_gb, mean) %>%
   arrange(-MEAN_DECREASE_RSS) %>% 
   mutate(MEAN_DECREASE_RSS = rescale(MEAN_DECREASE_RSS)) %>% 
   top_n(10,MEAN_DECREASE_RSS) %>% 
-  mutate(HORIZON = "1-quarter-ahead")
+  mutate(HORIZON = "1-quarter ahead")
   
 
 
@@ -481,7 +485,7 @@ imp_gb_Y <- sapply(vim_gb, mean) %>%
   arrange(-MEAN_DECREASE_RSS) %>% 
   mutate(MEAN_DECREASE_RSS = rescale(MEAN_DECREASE_RSS)) %>% 
   top_n(10,MEAN_DECREASE_RSS) %>% 
-  mutate(HORIZON = "1-year-ahead") 
+  mutate(HORIZON = "1-year ahead") 
 
 
 
@@ -502,7 +506,9 @@ imp_gb_Q %>%
              scales = "free",
              nrow = 2) +
   theme_thesis +
-  theme(panel.grid.major.x = element_line(color = "grey90", size = 0.5)) +
+  theme(panel.grid.major.x = element_line(color = "grey90", size = 0.5),
+        axis.text.y = element_text(size = 8),
+        axis.text.x = element_text(size = 9)) +
   xlab("Feature") +
   ylab("Relative Feature Influence")
 
@@ -602,7 +608,8 @@ tikz("plot_spaceSVR.tex",
      height = 4,
      width = 6)
 
-best_learner_svr %>% 
+#svr_tuning <- best_learner_svr %>%
+best_learner_svr %>%
   filter(kernel=="sigmoid") %>% 
   mutate(COST = cut(cost, breaks = c(0.01,0.1,1,10,100,1000,10000)),
          #ETA = cut(eta, breaks = c(0.001,0.005,0.01,0.05,0.1))
@@ -627,6 +634,11 @@ dev.off()
 # Interpretation: algorithm clearly favoring larger trees and rather indifferent regarding tree size
 
 
+tikz("plot_space.tex",
+     height = 6,
+     width = 6)
+grid.arrange(rf_tuning, gb_tuning, svr_tuning)
+dev.off()
   
 }
 
